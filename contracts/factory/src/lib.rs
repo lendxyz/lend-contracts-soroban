@@ -26,6 +26,7 @@ pub struct Operation {
     pub op_name: String,
 }
 
+// TODO: add actual EUR/USD Oracle contract
 mod oracle {
     soroban_sdk::contractimport!(file = "./path/to/stellar_oracle.wasm");
 }
@@ -190,3 +191,5 @@ impl LendFactory {
         );
     }
 }
+
+mod test;
