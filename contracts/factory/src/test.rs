@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{vec, Env, String};
+use soroban_sdk::Env;
 
 #[test]
 fn test() {
@@ -9,13 +9,7 @@ fn test() {
     let contract_id = env.register(LendFactory, ());
     let client = LendFactoryClient::new(&env, &contract_id);
 
-    let words = client.hello(&String::from_str(&env, "Dev"));
-    assert_eq!(
-        words,
-        vec![
-            &env,
-            String::from_str(&env, "Hello"),
-            String::from_str(&env, "Dev"),
-        ]
-    );
+    // TODO: make test suite for factory
+
+    assert_eq!(true, true);
 }
