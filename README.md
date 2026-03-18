@@ -1,5 +1,9 @@
 # Soroban Project
 
+# Work in progress
+
+The project will not compile at this time, will be ready in a few updates
+
 ## Project Structure
 
 This repository uses the recommended structure for a Soroban project:
