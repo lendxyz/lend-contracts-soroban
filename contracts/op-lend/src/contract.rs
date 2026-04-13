@@ -4,7 +4,6 @@ use crate::admin::{read_administrator, write_administrator};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
 use crate::balance::{read_balance, receive_balance, spend_balance};
 use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
-#[cfg(test)]
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
 use crate::storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
 use soroban_sdk::{
@@ -21,7 +20,7 @@ fn check_nonnegative_amount(amount: i128) {
 }
 
 #[contract]
-pub struct Token;
+pub struct OpLendToken;
 
 // SetAdmin is not a standardized token event, so we just define a custom event
 // for our token.
@@ -33,7 +32,7 @@ pub struct SetAdmin {
 }
 
 #[contractimpl]
-impl Token {
+impl OpLendToken {
     pub fn __constructor(e: Env, admin: Address, decimal: u32, name: String, symbol: String) {
         if decimal > 6 {
             panic!("Decimal must not be greater than 6");
@@ -74,7 +73,6 @@ impl Token {
         SetAdmin { admin, new_admin }.publish(&e);
     }
 
-    #[cfg(test)]
     pub fn get_allowance(e: Env, from: Address, spender: Address) -> Option<AllowanceValue> {
         let key = DataKey::Allowance(AllowanceDataKey { from, spender });
         let allowance = e.storage().temporary().get::<_, AllowanceValue>(&key);
@@ -83,7 +81,7 @@ impl Token {
 }
 
 #[contractimpl(contracttrait)]
-impl TokenInterface for Token {
+impl TokenInterface for OpLendToken {
     fn allowance(e: Env, from: Address, spender: Address) -> i128 {
         e.storage()
             .instance()
