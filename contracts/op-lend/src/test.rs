@@ -1,16 +1,17 @@
 #![cfg(test)]
 extern crate std;
 
-use crate::{contract::Token, TokenClient};
 use soroban_sdk::{
     symbol_short,
     testutils::{Address as _, AuthorizedFunction, AuthorizedInvocation},
     Address, Env, FromVal, IntoVal, String, Symbol,
 };
 
-fn create_token<'a>(e: &Env, admin: &Address) -> TokenClient<'a> {
+use crate::contract::{OpLendToken, OpLendTokenClient};
+
+fn create_token<'a>(e: &Env, admin: &Address) -> OpLendTokenClient<'a> {
     let token_contract = e.register(
-        Token,
+        OpLendToken,
         (
             admin,
             7_u32,
@@ -18,7 +19,7 @@ fn create_token<'a>(e: &Env, admin: &Address) -> TokenClient<'a> {
             String::from_val(e, &"symbol"),
         ),
     );
-    TokenClient::new(e, &token_contract)
+    OpLendTokenClient::new(e, &token_contract)
 }
 
 #[test]
@@ -243,10 +244,10 @@ fn transfer_from_insufficient_allowance() {
 fn decimal_is_over_eighteen() {
     let e = Env::default();
     let admin = Address::generate(&e);
-    let _ = TokenClient::new(
+    let _ = OpLendTokenClient::new(
         &e,
         &e.register(
-            Token,
+            OpLendToken,
             (
                 admin,
                 7_u32,
