@@ -12,8 +12,8 @@ fn get_oplend_wasm_hash(env: Env) -> BytesN<32> {
 pub fn deploy_oplend_from_hash(
     env: &Env,
     constructor_args: Vec<Val>,
+    salt: BytesN<32>,
 ) -> Address {
-    let salt: BytesN<32> = env.prng().gen();
     let wasm_hash = get_oplend_wasm_hash(env.clone());
 
     env.deployer()
