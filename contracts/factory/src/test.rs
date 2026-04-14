@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use crate::contract::LendFactoryClient;
+
 use super::*;
 use soroban_sdk::Env;
 

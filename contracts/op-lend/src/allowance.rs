@@ -1,9 +1,15 @@
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
 use soroban_sdk::{Address, Env};
 
-pub fn read_allowance(e: &Env, from: Address, spender: Address) -> AllowanceValue {
+pub fn read_allowance(
+    e: &Env,
+    from: Address,
+    spender: Address,
+) -> AllowanceValue {
     let key = DataKey::Allowance(AllowanceDataKey { from, spender });
-    if let Some(allowance) = e.storage().temporary().get::<_, AllowanceValue>(&key) {
+    if let Some(allowance) =
+        e.storage().temporary().get::<_, AllowanceValue>(&key)
+    {
         if allowance.expiration_ledger < e.ledger().sequence() {
             AllowanceValue {
                 amount: 0,
