@@ -1,6 +1,6 @@
 # Lend contracts soroban
 
-# Work in progress
+## Work in progress
 
 The project is still missing a few important features, but for now here is some PoC deployments based on this repository:
 
