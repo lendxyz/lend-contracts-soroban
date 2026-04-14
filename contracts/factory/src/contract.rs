@@ -86,8 +86,15 @@ impl LendFactory {
             symbol.into_val(&env),
         ];
 
-        let op_token_address =
-            create_oplend::deploy_oplend_from_hash(&env, constructor_args);
+        let mut salt_arr = [0u8; 32];
+        salt_arr[28..32].copy_from_slice(&op_count.to_be_bytes());
+        let salt = BytesN::from_array(&env, &salt_arr);
+
+        let op_token_address = create_oplend::deploy_oplend_from_hash(
+            &env,
+            constructor_args,
+            salt,
+        );
 
         let operation = Operation {
             op_token: op_token_address.clone(),
