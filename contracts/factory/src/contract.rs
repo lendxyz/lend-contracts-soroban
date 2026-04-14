@@ -1,6 +1,6 @@
 use soroban_sdk::{
-    contract, contractimpl, token, Address, BytesN, Env, IntoVal, String, Val,
-    Vec,
+    contract, contractimpl, token, vec, Address, BytesN, Env, IntoVal, String,
+    Val, Vec,
 };
 
 use crate::{
@@ -38,21 +38,35 @@ impl LendFactory {
             .set(&DataKey::OperationCount, &0u32);
     }
 
+    pub fn set_oplend_wasm_hash(env: Env, oplend_wasm_hash: BytesN<32>) {
+        let admin: Address =
+            env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
+    }
+
     pub fn create_operation(
         env: Env,
         op_name: String,
         total_shares: u128,
         eur_per_shares: u128,
     ) -> Address {
-        let admin: Address =
-            env.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .expect("Admin not initialized");
+
         admin.require_auth();
 
         let mut op_count: u32 = env
             .storage()
             .instance()
             .get(&DataKey::OperationCount)
-            .unwrap();
+            .unwrap_or(0);
 
         op_count += 1;
 
@@ -60,14 +74,18 @@ impl LendFactory {
             String::from_str(&env, "Lend Operation - "),
             op_name.clone(),
         );
-        let symbol = concat_str(
-            String::from_str(&env, "opLEND-"),
-            String::from_bytes(&env, &op_count.to_ne_bytes()),
-        );
 
-        let constructor_args: Vec<Val> =
-            (&env.current_contract_address(), &6, &name, &symbol)
-                .into_val(&env);
+        // TODO: handle concatenation with op_count
+        let symbol = String::from_str(&env, "opLEND");
+
+        let constructor_args: Vec<Val> = vec![
+            &env,
+            env.current_contract_address().into_val(&env),
+            6u32.into_val(&env),
+            name.into_val(&env),
+            symbol.into_val(&env),
+        ];
+
         let op_token_address =
             create_oplend::deploy_oplend_from_hash(&env, constructor_args);
 
