@@ -1,5 +1,3 @@
-//! This contract demonstrates a sample implementation of the Soroban token
-//! interface.
 use crate::admin::{read_administrator, write_administrator};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
 use crate::balance::{read_balance, receive_balance, spend_balance};
@@ -7,8 +5,8 @@ use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
 use crate::storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
 use soroban_sdk::{
-    contract, contractevent, contractimpl, token::TokenInterface, Address, Env, MuxedAddress,
-    String,
+    contract, contractevent, contractimpl, token::TokenInterface, Address, Env,
+    MuxedAddress, String,
 };
 use soroban_token_sdk::events;
 use soroban_token_sdk::metadata::TokenMetadata;
@@ -33,7 +31,13 @@ pub struct SetAdmin {
 
 #[contractimpl]
 impl OpLendToken {
-    pub fn __constructor(e: Env, admin: Address, decimal: u32, name: String, symbol: String) {
+    pub fn __constructor(
+        e: Env,
+        admin: Address,
+        decimal: u32,
+        name: String,
+        symbol: String,
+    ) {
         if decimal > 6 {
             panic!("Decimal must not be greater than 6");
         }
@@ -73,7 +77,11 @@ impl OpLendToken {
         SetAdmin { admin, new_admin }.publish(&e);
     }
 
-    pub fn get_allowance(e: Env, from: Address, spender: Address) -> Option<AllowanceValue> {
+    pub fn get_allowance(
+        e: Env,
+        from: Address,
+        spender: Address,
+    ) -> Option<AllowanceValue> {
         let key = DataKey::Allowance(AllowanceDataKey { from, spender });
         let allowance = e.storage().temporary().get::<_, AllowanceValue>(&key);
         allowance
@@ -89,7 +97,13 @@ impl TokenInterface for OpLendToken {
         read_allowance(&e, from, spender).amount
     }
 
-    fn approve(e: Env, from: Address, spender: Address, amount: i128, expiration_ledger: u32) {
+    fn approve(
+        e: Env,
+        from: Address,
+        spender: Address,
+        amount: i128,
+        expiration_ledger: u32,
+    ) {
         from.require_auth();
 
         check_nonnegative_amount(amount);
@@ -98,7 +112,13 @@ impl TokenInterface for OpLendToken {
             .instance()
             .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
 
-        write_allowance(&e, from.clone(), spender.clone(), amount, expiration_ledger);
+        write_allowance(
+            &e,
+            from.clone(),
+            spender.clone(),
+            amount,
+            expiration_ledger,
+        );
         events::Approve {
             from,
             spender,
@@ -136,7 +156,13 @@ impl TokenInterface for OpLendToken {
         .publish(&e);
     }
 
-    fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128) {
+    fn transfer_from(
+        e: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) {
         spender.require_auth();
 
         check_nonnegative_amount(amount);
