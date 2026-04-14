@@ -66,7 +66,8 @@ impl LendFactory {
         );
 
         let constructor_args: Vec<Val> =
-            (&admin, &6, &name, &symbol).into_val(&env);
+            (&env.current_contract_address(), &6, &name, &symbol)
+                .into_val(&env);
         let op_token_address =
             create_oplend::deploy_oplend_from_hash(&env, constructor_args);
 
