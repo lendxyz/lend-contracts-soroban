@@ -1,5 +1,10 @@
 # Lend contracts soroban
 
+This project is meant to be a fundraising contract for on-chain securities and is constitued of two contracts: the `Factory` and `OpLend` contracts.
+
+- The `Factory` can handle operation and funding management and also acts as an `OpLend` deployer.
+- The `OpLend` is basically a token contract with a few more methods to control certain permissions in order to comply with the legal framework associated with the tokenized securities.
+
 ## Work in progress
 
 The project is still missing a few important features, but for now here is some PoC deployments based on this repository:
