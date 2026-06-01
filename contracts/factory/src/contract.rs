@@ -6,7 +6,7 @@ use soroban_sdk::{
 use crate::{
     create_oplend,
     types::{DataKey, InvestedEvent, OpLendToken, Operation},
-    utils::concat_str,
+    utils::{concat_str, u32_to_string},
 };
 
 #[contract]
@@ -75,8 +75,10 @@ impl LendFactory {
             op_name.clone(),
         );
 
-        // TODO: handle concatenation with op_count
-        let symbol = String::from_str(&env, "opLEND");
+        let symbol = concat_str(
+            String::from_str(&env, "opLEND-"),
+            u32_to_string(&env, op_count),
+        );
 
         let constructor_args: Vec<Val> = vec![
             &env,
