@@ -37,10 +37,33 @@ EUR_PER_SHARES=1000000 \  # 1 EUR per share, 6 decimals
 
 Prints the deployed op-lend token address.
 
+## Network addresses
+
+`deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE`.
+Verified 2026-06-02 (on-chain + Circle/Stellar docs).
+
+| Asset | testnet | mainnet |
+|---|---|---|
+| **USDC** (SAC) | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` |
+| **Reflector FX oracle** | `CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W` | `CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC` |
+
+- **Reflector FX oracle** = the fiat/forex feed (one of Reflector's three
+  oracles). Base asset `USD`, `decimals() = 14`, quotes EUR via
+  `lastprice(Asset::Other("EUR"))`. Returned ≈1.1646 USD/EUR on both networks.
+- **USDC issuers**: mainnet `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN`,
+  testnet `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` (per Circle).
+  SAC IDs are deterministic — re-derive if your test setup uses a different
+  issuer:
+  ```bash
+  stellar contract id asset --asset USDC:<ISSUER> \
+    --network-passphrase "Test SDF Network ; September 2015"
+  ```
+- Testnet's FX feed set is smaller than mainnet's and differs (e.g. testnet has
+  CHF, mainnet has many more currencies) — EUR is on both. Read `decimals()` /
+  `assets()` per network rather than assuming.
+
 ## Notes
 
 - `BACKEND_SIGNER` is the ed25519 **public** key the backend signs invest /
   whitelist messages with. The message format the backend must reproduce is in
   `contracts/factory/src/crypto.rs` and `contracts/op-lend/src/crypto.rs`.
-- Confirm the live Reflector oracle address and that its `Asset::Other("EUR")`
-  feed exists for your network before relying on `invest` / `get_amount_in`.

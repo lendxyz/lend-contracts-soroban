@@ -11,16 +11,31 @@
 #   ORACLE          Reflector (SEP-40) oracle contract address (C...).
 #   BACKEND_SIGNER  Backend ed25519 public key, 32 bytes as 64 hex chars.
 #
-# Optional env vars:
-#   NETWORK         Network passphrase/name (default: testnet).
+# Optional env vars (sensible per-network defaults applied if unset):
+#   NETWORK         Network name: testnet | mainnet (default: testnet).
+#   USDC            USDC SAC; defaults to the network's Circle USDC.
+#   ORACLE          Reflector FX oracle; defaults to the network's FX feed.
 #   ADMIN           Factory admin address (default: address of SOURCE).
 #
-# Usage:
-#   SOURCE=alice USDC=C... ORACLE=C... BACKEND_SIGNER=ab12... ./scripts/deploy.sh
+# Usage (testnet, defaults for USDC + oracle):
+#   SOURCE=alice BACKEND_SIGNER=ab12... ./scripts/deploy.sh
 #
 set -euo pipefail
 
 NETWORK="${NETWORK:-testnet}"
+
+# Verified 2026-06-02 (on-chain + Circle/Stellar docs). See scripts/README.md.
+# Reflector FX oracle = the fiat/forex feed (base USD, decimals 14, carries EUR).
+case "$NETWORK" in
+  testnet)
+    : "${USDC:=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA}"
+    : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
+    ;;
+  mainnet|pubnet|public)
+    : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
+    : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
+    ;;
+esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RELEASE_DIR="$REPO_ROOT/target/wasm32v1-none/release"
 OPLEND_WASM="$RELEASE_DIR/lend_operation_token.wasm"
