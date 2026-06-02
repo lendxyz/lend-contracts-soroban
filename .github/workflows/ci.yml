@@ -22,13 +22,7 @@ jobs:
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli
 
-      # factory `make test` builds the op-lend wasm (contractimport! dependency),
-      # builds the factory wasm, then runs the factory integration tests.
-      - name: make test (factory)
-        working-directory: contracts/factory
-        run: make test
-
-      # op-lend `make test` builds + runs the token unit tests.
-      - name: make test (op-lend)
-        working-directory: contracts/op-lend
+      # Builds both contract wasms (factory tests contractimport! the op-lend
+      # wasm), then runs the full workspace test suite.
+      - name: make test
         run: make test
