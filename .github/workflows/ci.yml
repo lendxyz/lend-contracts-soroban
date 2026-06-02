@@ -19,13 +19,15 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # stellar-cli depends on libdbus-sys (keyring) which needs the system
-      # dbus dev library + pkg-config to build.
-      - name: Install system deps
-        run: sudo apt-get update && sudo apt-get install -y libdbus-1-dev pkg-config
-
+      # Prebuilt stellar-cli binary (avoids the slow source build + its
+      # libdbus-sys system dependency). libdbus-1.so.3 runtime is preinstalled.
       - name: Install Stellar CLI
-        run: cargo install --locked stellar-cli
+        env:
+          STELLAR_CLI_VERSION: 26.1.0
+        run: |
+          curl -sSL "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/stellar-cli-${STELLAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin stellar
+          stellar --version
 
       # Builds both contract wasms (factory tests contractimport! the op-lend
       # wasm), then runs the full workspace test suite.
