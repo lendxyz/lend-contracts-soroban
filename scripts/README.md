@@ -10,14 +10,12 @@ Builds the wasms, uploads the op-lend wasm, deploys the factory, and calls
 
 ```bash
 SOURCE=alice \
-USDC=CB...           \  # USDC token contract
-ORACLE=CA...         \  # Reflector EUR/USD oracle
 BACKEND_SIGNER=ab12..\  # backend ed25519 pubkey, 64 hex chars (32 bytes)
 NETWORK=testnet      \  # optional, default testnet
 ./scripts/deploy.sh
 ```
 
-Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
+`USDC` and `ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
 
 The op-lend wasm is uploaded once; every operation the factory creates is a new
 op-lend instance deployed from that hash.
