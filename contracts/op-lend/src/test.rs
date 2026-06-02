@@ -41,8 +41,7 @@ fn sign_whitelist(
     nonce: &String,
 ) -> BytesN<64> {
     // Reconstruct the exact message bytes the contract builds.
-    let mut msg = Bytes::from_slice(e, b"WHITELIST");
-    msg.append(&Bytes::from(token.address.to_string()));
+    let mut msg = Bytes::from(token.address.to_string());
     msg.append(&Bytes::from(user.to_string()));
     msg.append(&Bytes::from(nonce.clone()));
 
