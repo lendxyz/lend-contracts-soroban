@@ -65,7 +65,8 @@ fn setup<'a>() -> Setup<'a> {
 
     let oracle_addr = e.register(MockOracle, ());
 
-    let signer = BytesN::from_array(&e, &signer_key().verifying_key().to_bytes());
+    let signer =
+        BytesN::from_array(&e, &signer_key().verifying_key().to_bytes());
     let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
 
     let factory_id = e.register(LendFactory, ());

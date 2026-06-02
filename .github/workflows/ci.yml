@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable + wasm32v1-none)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32v1-none
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Stellar CLI
+        run: cargo install --locked stellar-cli
+
+      # factory `make test` builds the op-lend wasm (contractimport! dependency),
+      # builds the factory wasm, then runs the factory integration tests.
+      - name: make test (factory)
+        working-directory: contracts/factory
+        run: make test
+
+      # op-lend `make test` builds + runs the token unit tests.
+      - name: make test (op-lend)
+        working-directory: contracts/op-lend
+        run: make test
