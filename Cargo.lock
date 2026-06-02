@@ -832,6 +832,7 @@ dependencies = [
 name = "lend-operation-token"
 version = "0.0.1"
 dependencies = [
+ "ed25519-dalek",
  "soroban-sdk",
  "soroban-token-sdk",
 ]
@@ -840,6 +841,7 @@ dependencies = [
 name = "lend_factory"
 version = "0.0.0"
 dependencies = [
+ "ed25519-dalek",
  "soroban-sdk",
 ]
 
