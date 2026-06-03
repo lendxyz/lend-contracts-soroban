@@ -35,6 +35,25 @@ EUR_PER_SHARES=1000000 \  # 1 EUR per share, 6 decimals
 
 Prints the deployed op-lend token address.
 
+## `deploy-rewards.sh`
+
+Deploys the `LendRewards` merkle reward-distribution contract (constructor takes
+admin + reward token).
+
+```bash
+SOURCE=alice \
+NETWORK=testnet \  # optional, default testnet
+./scripts/deploy-rewards.sh
+```
+
+`REWARD_TOKEN` defaults to the network's USDC (see
+[Network addresses](#network-addresses)); set it to override. `ADMIN` defaults
+to the `SOURCE` address. Prints `REWARDS_ID` on success.
+
+Merkle leaves are `keccak256(user_strkey_bytes ++ balance_i128_be)`, internal
+nodes sorted-pair keccak256 (OZ-compatible). The backend tree builder must match
+— see `contracts/rewards/src/merkle.rs`.
+
 ## Network addresses
 
 `deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE`.
