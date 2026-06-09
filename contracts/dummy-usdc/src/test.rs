@@ -30,27 +30,14 @@ fn test_metadata() {
 }
 
 #[test]
-fn test_mint_by_admin() {
-    let e = Env::default();
-    e.mock_all_auths();
-
-    let admin = Address::generate(&e);
-    let user = Address::generate(&e);
-    let token = create_token(&e, &admin);
-
-    token.mint(&user, &1_000_000);
-    assert_eq!(token.balance(&user), 1_000_000);
-}
-
-#[test]
-fn test_faucet_open_to_anyone() {
+fn test_faucet() {
     let e = Env::default();
     // No auth mocking: faucet must not require any signature.
     let admin = Address::generate(&e);
     let user = Address::generate(&e);
     let token = create_token(&e, &admin);
 
-    token.faucet(&user, &500_000);
+    token.mint(&user, &500_000);
     assert_eq!(token.balance(&user), 500_000);
 }
 

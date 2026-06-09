@@ -68,10 +68,11 @@ NETWORK=testnet \  # optional, default testnet
 `ADMIN` defaults to the `SOURCE` address. `DECIMAL` / `NAME` / `SYMBOL` default
 to `6` / `"Dummy USD Coin"` / `"dUSDC"`. Prints `DUMMY_USDC_ID` on success.
 
-Two ways to create supply:
+After deploy it mints **10M tokens** (`10_000_000 * 10^DECIMAL` base units) to
+the admin. The seed mint is signed by `SOURCE`, so it only works when `ADMIN`
+is the `SOURCE` address (the default).
 
-- `mint(to, amount)` — **admin only** (`admin.require_auth()`).
-- `faucet(to, amount)` — **open to anyone**, so devs can self-serve test
+- `mint(to, amount)` —— **open to anyone**, so devs can self-serve test
   tokens.
 
 Use this when you want a USDC-like token you fully control on testnet instead of

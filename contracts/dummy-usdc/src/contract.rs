@@ -6,10 +6,13 @@
 //!   - `faucet` — open to anyone, so devs can self-serve test tokens.
 
 use soroban_sdk::{
-    contract, contractimpl, token::TokenInterface, Address, Env, MuxedAddress, String,
+    contract, contractimpl, token::TokenInterface, Address, Env, MuxedAddress,
+    String,
 };
 
-use crate::admin::{has_administrator, read_administrator, write_administrator};
+use crate::admin::{
+    has_administrator, read_administrator, write_administrator,
+};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
 use crate::balance::{read_balance, receive_balance, spend_balance};
 use crate::events;
@@ -33,7 +36,13 @@ pub struct DummyUSDC;
 
 #[contractimpl]
 impl DummyUSDC {
-    pub fn __constructor(e: Env, admin: Address, decimal: u32, name: String, symbol: String) {
+    pub fn __constructor(
+        e: Env,
+        admin: Address,
+        decimal: u32,
+        name: String,
+        symbol: String,
+    ) {
         if has_administrator(&e) {
             panic!("already initialized")
         }
@@ -41,24 +50,12 @@ impl DummyUSDC {
         write_metadata(&e, decimal, name, symbol);
     }
 
-    /// Admin-only: mint `amount` to `to`.
+    /// Open faucet: anyone can mint `amount` to `to`. Testnet convenience only.
     pub fn mint(e: Env, to: Address, amount: i128) {
         check_nonnegative_amount(amount);
-        let admin = read_administrator(&e);
-        admin.require_auth();
         bump_instance(&e);
 
         receive_balance(&e, to.clone(), amount);
-        events::mint(&e, admin, to, amount);
-    }
-
-    /// Open faucet: anyone can mint `amount` to `to`. Testnet convenience only.
-    pub fn faucet(e: Env, to: Address, amount: i128) {
-        check_nonnegative_amount(amount);
-        bump_instance(&e);
-
-        receive_balance(&e, to.clone(), amount);
-        // Reuse the standard `mint` event; `to` doubles as the minter here.
         events::mint(&e, to.clone(), to, amount);
     }
 
@@ -84,7 +81,13 @@ impl TokenInterface for DummyUSDC {
         read_allowance(&e, from, spender).amount
     }
 
-    fn approve(e: Env, from: Address, spender: Address, amount: i128, expiration_ledger: u32) {
+    fn approve(
+        e: Env,
+        from: Address,
+        spender: Address,
+        amount: i128,
+        expiration_ledger: u32,
+    ) {
         from.require_auth();
         check_nonnegative_amount(amount);
         bump_instance(&e);
@@ -115,7 +118,13 @@ impl TokenInterface for DummyUSDC {
         events::transfer(&e, from, to, amount);
     }
 
-    fn transfer_from(e: Env, spender: Address, from: Address, to: Address, amount: i128) {
+    fn transfer_from(
+        e: Env,
+        spender: Address,
+        from: Address,
+        to: Address,
+        amount: i128,
+    ) {
         spender.require_auth();
         check_nonnegative_amount(amount);
         bump_instance(&e);

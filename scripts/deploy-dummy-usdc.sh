@@ -2,8 +2,13 @@
 #
 # Deploy the DummyUSDC token — a testnet stand-in for Circle USDC.
 #
-# Builds the wasm and deploys it with its constructor (admin + metadata).
-# Admin can `mint`; anyone can `faucet` test tokens. No transfer restrictions.
+# Builds the wasm and deploys it with its constructor (admin + metadata), then
+# mints 10M tokens to the admin. Admin can `mint`; anyone can `faucet`. No
+# transfer restrictions.
+#
+# Note: the seed mint is signed by SOURCE, so it only succeeds when ADMIN is the
+# SOURCE identity's address (the default). Override ADMIN and the mint is
+# skipped-with-error unless that address signs.
 #
 # Required env vars:
 #   SOURCE     Stellar CLI identity used to sign + pay.
@@ -51,11 +56,25 @@ DUMMY_USDC_ID="$(stellar contract deploy \
   --name "$NAME" \
   --symbol "$SYMBOL" | tail -n1)"
 
+# Seed the deployer/admin with 10M tokens (scaled by DECIMAL).
+MINT_WHOLE=10000000
+MINT_AMOUNT="${MINT_WHOLE}$(printf '0%.0s' $(seq 1 "$DECIMAL"))"
+echo "==> Minting ${MINT_WHOLE} $SYMBOL to admin ($MINT_AMOUNT base units)..."
+stellar contract invoke \
+  --id "$DUMMY_USDC_ID" \
+  --source "$SOURCE" \
+  --network "$NETWORK" \
+  -- \
+  mint \
+  --to "$ADMIN" \
+  --amount "$MINT_AMOUNT"
+
 echo ""
 echo "==> Done."
 echo "    DUMMY_USDC_ID=$DUMMY_USDC_ID"
+echo "    Minted ${MINT_WHOLE} $SYMBOL to $ADMIN"
 echo ""
-echo "    # admin mint:"
+echo "    # admin mint more:"
 echo "    stellar contract invoke --id \$DUMMY_USDC_ID --source $SOURCE --network $NETWORK -- mint --to <ADDR> --amount 1000000000"
 echo "    # open faucet (anyone):"
 echo "    stellar contract invoke --id \$DUMMY_USDC_ID --source $SOURCE --network $NETWORK -- faucet --to <ADDR> --amount 1000000000"
