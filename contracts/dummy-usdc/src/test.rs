@@ -30,9 +30,9 @@ fn test_metadata() {
 }
 
 #[test]
-fn test_faucet() {
+fn test_mint() {
     let e = Env::default();
-    // No auth mocking: faucet must not require any signature.
+
     let admin = Address::generate(&e);
     let user = Address::generate(&e);
     let token = create_token(&e, &admin);

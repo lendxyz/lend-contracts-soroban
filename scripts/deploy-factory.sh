@@ -9,7 +9,8 @@
 #   SOURCE          Stellar CLI identity (see `stellar keys ls`) used to sign + pay.
 #   USDC            USDC token contract address (C...).
 #   ORACLE          Reflector (SEP-40) oracle contract address (C...).
-#   BACKEND_SIGNER  Backend ed25519 public key, 32 bytes as 64 hex chars.
+#   BACKEND_SIGNER  Backend ed25519 public key: 64 hex chars or a G... strkey
+#                   (auto-decoded to hex).
 #
 # Optional env vars (sensible per-network defaults applied if unset):
 #   NETWORK         Network name: testnet | mainnet (default: testnet).
@@ -28,7 +29,7 @@ NETWORK="${NETWORK:-testnet}"
 # Reflector FX oracle = the fiat/forex feed (base USD, decimals 14, carries EUR).
 case "$NETWORK" in
   testnet)
-    : "${USDC:=CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA}"
+    : "${USDC:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
     ;;
   mainnet|pubnet|public)
@@ -46,6 +47,19 @@ req SOURCE
 req USDC
 req ORACLE
 req BACKEND_SIGNER
+
+# The contract's backend_signer param is BytesN<32>, so the CLI needs 64 hex
+# chars. Accept a Stellar G... strkey for convenience and decode it to the raw
+# 32-byte ed25519 pubkey (strkey = version byte + 32-byte payload + 2-byte crc).
+if [[ "$BACKEND_SIGNER" == G* ]]; then
+  BACKEND_SIGNER="$(python3 - "$BACKEND_SIGNER" <<'PY'
+import base64, sys
+s = sys.argv[1]
+raw = base64.b32decode(s + "=" * ((8 - len(s) % 8) % 8))
+sys.stdout.write(raw[1:33].hex())
+PY
+)"
+fi
 
 ADMIN="${ADMIN:-$(stellar keys address "$SOURCE")}"
 

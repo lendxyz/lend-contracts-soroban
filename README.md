@@ -8,40 +8,15 @@ This project is meant to be a fundraising contract for on-chain securities and i
 It also ships some supporting contracts:
 
 - `LendRewards` — merkle-based reward distribution (see `contracts/rewards`).
-- `DummyUSDC` — a testnet-only SEP-41 token that emulates Circle USDC: admin `mint`, open `faucet`, and **no transfer restrictions**. Use it when you want a USDC-like token you fully control on testnet instead of the shared Circle SAC. Deploy with [`scripts/deploy-dummy-usdc.sh`](scripts/README.md#deploy-dummy-usdcsh).
+- `DummyUSDC` — a testnet-only SEP-41 token that emulates Circle USDC: open `mint`, and **no transfer restrictions**. Use it when you want a USDC-like token you fully control on testnet instead of the shared Circle SAC. Deploy with [`scripts/deploy-dummy-usdc.sh`](scripts/README.md#deploy-dummy-usdcsh).
 
 ## Work in progress
 
-The project is still missing a few important features, but for now here is some PoC deployments based on this repository:
-
-- Factory address: [CATQIEC3UAAEPYBPFBJWHGY3WYQJJZ344NXAADZ7HWICA2SWG7NU5III](https://testnet.stellarchain.io/contracts/CATQIEC3UAAEPYBPFBJWHGY3WYQJJZ344NXAADZ7HWICA2SWG7NU5III)
-- OpLend address: [CCW5RC53PE4DOL6IS6D34DEKRDELTB63CJ3A5OWOLCLVM43CL7TYJZRL](https://testnet.stellarchain.io/contracts/CCW5RC53PE4DOL6IS6D34DEKRDELTB63CJ3A5OWOLCLVM43CL7TYJZRL)
+The project is still under development, but for now you can see the [DEPLOYMENTS.md](DEPLOYMENTS.md) file for some PoC deployments based on this repository.
 
 ## Project Structure
 
 This repository uses the recommended structure for a Soroban project:
-
-```text
-.
-├── contracts
-│   ├── dummy-usdc
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   ├── factory
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   └── op-lend
-│       ├── src
-│       │   ├── lib.rs
-│       │   └── test.rs
-│       └── Cargo.toml
-├── Cargo.toml
-└── README.md
-```
 
 - New Soroban contracts can be put in `contracts`, each in their own directory.
 - Contracts should have their own `Cargo.toml` files that rely on the top-level `Cargo.toml` workspace for their dependencies.

@@ -2,8 +2,7 @@
 //!
 //! Implements the standard SEP-41 token interface with no transfer
 //! restrictions. New supply comes from two entry points:
-//!   - `mint`   — admin-only, mints to any address.
-//!   - `faucet` — open to anyone, so devs can self-serve test tokens.
+//!   - `mint`   —  open to anyone, so devs can self-serve test tokens.
 
 use soroban_sdk::{
     contract, contractimpl, token::TokenInterface, Address, Env, MuxedAddress,
@@ -50,7 +49,6 @@ impl DummyUSDC {
         write_metadata(&e, decimal, name, symbol);
     }
 
-    /// Open faucet: anyone can mint `amount` to `to`. Testnet convenience only.
     pub fn mint(e: Env, to: Address, amount: i128) {
         check_nonnegative_amount(amount);
         bump_instance(&e);
