@@ -1,9 +1,14 @@
 # Lend contracts soroban
 
-This project is meant to be a fundraising contract for on-chain securities and is constitued of two contracts: the `Factory` and `OpLend` contracts.
+This project is meant to be a fundraising contract for on-chain securities and is constitued of two core contracts: the `Factory` and `OpLend` contracts.
 
 - The `Factory` can handle operation and funding management and also acts as an `OpLend` deployer.
 - The `OpLend` is basically a token contract with a few more methods to control certain permissions in order to comply with the legal framework associated with the tokenized securities.
+
+It also ships some supporting contracts:
+
+- `LendRewards` — merkle-based reward distribution (see `contracts/rewards`).
+- `DummyUSDC` — a testnet-only SEP-41 token that emulates Circle USDC: admin `mint`, open `faucet`, and **no transfer restrictions**. Use it when you want a USDC-like token you fully control on testnet instead of the shared Circle SAC. Deploy with [`scripts/deploy-dummy-usdc.sh`](scripts/README.md#deploy-dummy-usdcsh).
 
 ## Work in progress
 
@@ -19,16 +24,21 @@ This repository uses the recommended structure for a Soroban project:
 ```text
 .
 ├── contracts
-│   ├── factory
-│   │   ├── src
-│   │   │   ├── lib.rs
-│   │   │   └── test.rs
-│   │   └── Cargo.toml
-│   └── op-lend
-│       ├── src
-│       │   ├── lib.rs
-│       │   └── test.rs
-│       └── Cargo.toml
+│   ├── dummy-usdc
+│   │   ├── src
+│   │   │   ├── lib.rs
+│   │   │   └── test.rs
+│   │   └── Cargo.toml
+│   ├── factory
+│   │   ├── src
+│   │   │   ├── lib.rs
+│   │   │   └── test.rs
+│   │   └── Cargo.toml
+│   └── op-lend
+│       ├── src
+│       │   ├── lib.rs
+│       │   └── test.rs
+│       └── Cargo.toml
 ├── Cargo.toml
 └── README.md
 ```

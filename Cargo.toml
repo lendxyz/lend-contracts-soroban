@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "contracts/dummy-usdc",
     "contracts/factory",
     "contracts/op-lend",
     "contracts/rewards",

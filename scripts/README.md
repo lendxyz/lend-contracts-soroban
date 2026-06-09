@@ -54,6 +54,29 @@ Merkle leaves are `keccak256(user_strkey_bytes ++ balance_i128_be)`, internal
 nodes sorted-pair keccak256 (OZ-compatible). The backend tree builder must match
 — see `contracts/rewards/src/merkle.rs`.
 
+## `deploy-dummy-usdc.sh`
+
+Deploys `DummyUSDC`, a testnet stand-in for Circle USDC. Standard SEP-41 token
+with **no transfer restrictions**; constructor takes admin + metadata.
+
+```bash
+SOURCE=alice \
+NETWORK=testnet \  # optional, default testnet
+./scripts/deploy-dummy-usdc.sh
+```
+
+`ADMIN` defaults to the `SOURCE` address. `DECIMAL` / `NAME` / `SYMBOL` default
+to `6` / `"Dummy USD Coin"` / `"dUSDC"`. Prints `DUMMY_USDC_ID` on success.
+
+Two ways to create supply:
+
+- `mint(to, amount)` — **admin only** (`admin.require_auth()`).
+- `faucet(to, amount)` — **open to anyone**, so devs can self-serve test
+  tokens.
+
+Use this when you want a USDC-like token you fully control on testnet instead of
+the shared Circle SAC.
+
 ## Network addresses
 
 `deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE`.
