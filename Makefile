@@ -18,8 +18,8 @@ build:
 #   make deploy-factory
 #   make deploy-rewards
 #   make deploy-dummy-usdc
-#   make create-operation FACTORY_ID=C... OP_NAME="Alpha" \
-#     TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+#   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+#   make start-operation OP_ID=0
 SOURCE ?= lend-testnet
 BACKEND_SIGNER ?= GAIOQM6QINN427MWFQUHJZGG6T6KOE2ZGLRS2DVYIUGUOBSREDHJNTQM
 export SOURCE BACKEND_SIGNER
@@ -36,6 +36,9 @@ deploy-dummy-usdc:
 create-operation:
 	./scripts/create-operation.sh
 
+start-operation:
+	./scripts/start-operation.sh
+
 fmt:
 	cargo fmt --all
 
@@ -43,4 +46,4 @@ clean:
 	cargo clean
 
 .PHONY: default all test build fmt clean \
-	deploy-factory deploy-rewards deploy-dummy-usdc create-operation
+	deploy-factory deploy-rewards deploy-dummy-usdc create-operation start-operation

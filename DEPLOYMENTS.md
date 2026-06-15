@@ -16,6 +16,12 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Mainnet         | TBD |
 | Testnet | 09d8ee86cfc13e048ed11bf407c677e98a8473f2feaac74d06654979561bc2f0 |
 
+## OpLend testnet instances
+| Testnet operation          | Address                                    |
+| ---------------- | ------------------------------------------ |
+| Alpha | CAQKKEXY5P6KG3V3SD3BNAIDGNL55S7UEDSAQIRVZIYSPS5SLXT5OWUU|
+
+
 ## Rewards
 
 | Network          | Address                                    |

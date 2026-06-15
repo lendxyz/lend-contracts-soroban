@@ -14,12 +14,20 @@
 #   NETWORK         Network name (default: testnet).
 #
 # Usage:
-#   SOURCE=alice FACTORY_ID=C... OP_NAME="Alpha" TOTAL_SHARES=1000000 \
-#     EUR_PER_SHARES=1000000 ./scripts/create-operation.sh
+#   SOURCE=alice OP_NAME="Alpha" TOTAL_SHARES=1000000 \ EUR_PER_SHARES=1000000 ./scripts/create-operation.sh
 #
 set -euo pipefail
 
 NETWORK="${NETWORK:-testnet}"
+case "$NETWORK" in
+  testnet)
+    : "${FACTORY_ID:=CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF}"
+    ;;
+  # TODO: change this when mainnet
+  mainnet|pubnet|public)
+    : "${FACTORY_ID:=CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF}"
+    ;;
+esac
 
 req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
 req SOURCE
