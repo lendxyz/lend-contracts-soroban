@@ -20,6 +20,9 @@ build:
 #   make deploy-dummy-usdc
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 #   make start-operation OP_ID=0
+#   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
+#   make fund-dummy-usdc DUMMY_USDC_ID=CC... TO=G... AMOUNT_WHOLE=5000
+#   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
 SOURCE ?= lend-testnet
 BACKEND_SIGNER ?= GAIOQM6QINN427MWFQUHJZGG6T6KOE2ZGLRS2DVYIUGUOBSREDHJNTQM
 export SOURCE BACKEND_SIGNER
@@ -39,6 +42,15 @@ create-operation:
 start-operation:
 	./scripts/start-operation.sh
 
+invest:
+	./scripts/invest.sh
+
+fund-dummy-usdc:
+	./scripts/fund-dummy-usdc.sh
+
+update-backend-signer:
+	./scripts/update-backend-signer.sh
+
 fmt:
 	cargo fmt --all
 
@@ -46,4 +58,5 @@ clean:
 	cargo clean
 
 .PHONY: default all test build fmt clean \
-	deploy-factory deploy-rewards deploy-dummy-usdc create-operation start-operation
+	deploy-factory deploy-rewards deploy-dummy-usdc create-operation start-operation invest \
+	fund-dummy-usdc update-backend-signer

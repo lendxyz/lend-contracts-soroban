@@ -35,6 +35,54 @@ EUR_PER_SHARES=1000000 \  # 1 EUR per share, 6 decimals
 
 Prints the deployed op-lend token address.
 
+## `start-operation.sh`
+
+Admin-only. Flips an operation to started so it can accept `invest` calls.
+
+```bash
+SOURCE=alice \
+FACTORY_ID=CC... \
+OP_ID=0 \
+./scripts/start-operation.sh
+```
+
+## `invest.sh`
+
+Invest in a started operation. `SOURCE` is the investor (signs the tx and pays
+USDC); the backend signature + nonce are supplied by the caller.
+
+```bash
+SOURCE=alice \
+FACTORY_ID=CC... \
+OP_ID=0 \
+SHARES=100 \                 # shares to buy, 6 decimals
+NONCE=abc \                  # must match what the signature was built with
+SIGNATURE=deadbeef... \      # backend ed25519 sig, 64-byte hex
+INVESTOR=G... \              # optional, defaults to `stellar keys address $SOURCE`
+./scripts/invest.sh
+```
+
+The signature must cover the contract's `build_invest_message`:
+`"ONCHAIN_INVEST" || factory_addr || id(u32 BE) || user_addr || shares(i128 BE) || nonce`,
+signed by the backend signer ed25519 key (see `contracts/factory/src/crypto.rs`).
+
+## `update-backend-signer.sh`
+
+Admin-only. Updates the factory's backend signer — the ed25519 key whose
+signatures `invest` / `predeposit` / `fiat_invest` verify against. Use this when
+the signer the API holds (`STELLAR_SIGNER_PRIVATE_KEY` in `lend-api`) differs
+from what the factory was deployed with (`ED25519 verification` failures).
+
+```bash
+SOURCE=alice \
+FACTORY_ID=CC... \
+BACKEND_SIGNER=GAOQ67SJ... \  # 64 hex chars or a G... strkey
+./scripts/update-backend-signer.sh
+```
+
+Accepts a `G...` strkey (decoded to the raw 32-byte pubkey) or 64 hex chars,
+same as `deploy-factory.sh`.
+
 ## `deploy-rewards.sh`
 
 Deploys the `LendRewards` merkle reward-distribution contract (constructor takes
@@ -77,6 +125,23 @@ is the `SOURCE` address (the default).
 
 Use this when you want a USDC-like token you fully control on testnet instead of
 the shared Circle SAC.
+
+## `fund-dummy-usdc.sh`
+
+Mints DummyUSDC to any address. `mint` is open to anyone, so any `SOURCE`
+identity can top up any address.
+
+```bash
+SOURCE=alice \
+TO=G... \
+DUMMY_USDC_ID=CC... \  # optional, defaults per NETWORK (testnet below)
+AMOUNT_WHOLE=10000 \   # optional, whole tokens (default 10000), scaled by DECIMAL
+DECIMAL=6 \            # optional, default 6
+./scripts/fund-dummy-usdc.sh
+```
+
+`DUMMY_USDC_ID` defaults to `CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN`
+on testnet; set it to override.
 
 ## Network addresses
 
