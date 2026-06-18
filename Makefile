@@ -21,6 +21,7 @@ build:
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 #   make start-operation OP_ID=0
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
+#   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE defaults to test-user
 #   make fund-dummy-usdc DUMMY_USDC_ID=CC... TO=G... AMOUNT_WHOLE=5000
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
 SOURCE ?= lend-testnet
@@ -45,6 +46,11 @@ start-operation:
 invest:
 	./scripts/invest.sh
 
+# Fetches the mint proof from the API then invests. Defaults SOURCE to test-user.
+invest-with-proof: SOURCE := test-user
+invest-with-proof:
+	./scripts/invest-with-proof.sh
+
 fund-dummy-usdc:
 	./scripts/fund-dummy-usdc.sh
 
@@ -59,4 +65,4 @@ clean:
 
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards deploy-dummy-usdc create-operation start-operation invest \
-	fund-dummy-usdc update-backend-signer
+	invest-with-proof fund-dummy-usdc update-backend-signer
