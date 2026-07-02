@@ -1,14 +1,15 @@
 {
-  "root": "0x124ae8f5de88bab5e63f32318a3d57a941ba09ccc4c37bf5669bb592ddf0df38",
-  "total_allocation": "7000000",
-  "count": 4,
+  "root": "0x77ab6b661e5aef17038cafaf9b5d6dee56a2ecd32cf6340da39413f18b36f963",
+  "total_allocation": "4213967000",
+  "count": 5,
   "claims": [
     {
       "address": "GAIOQM6QINN427MWFQUHJZGG6T6KOE2ZGLRS2DVYIUGUOBSREDHJNTQM",
       "balance": "1000000",
       "proof": [
         "0xadbe40d74fb873fb743282a63cff57ddee6bcfdb491804a2b1954c373c1efe73",
-        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64"
+        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64",
+        "0x67c02d42c437b092896b161d50673e700302981763d1e4cb1b987e0641e90fd0"
       ]
     },
     {
@@ -16,7 +17,8 @@
       "balance": "2500000",
       "proof": [
         "0x689b67c0d86a3d703a1ca4decdbf06b4a5ff98c59d381c8912f585fb9a5ee5f8",
-        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64"
+        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64",
+        "0x67c02d42c437b092896b161d50673e700302981763d1e4cb1b987e0641e90fd0"
       ]
     },
     {
@@ -24,7 +26,8 @@
       "balance": "500000",
       "proof": [
         "0x6056ef795eca17dab7403a6d7b4d4a2c46bbe3bf9dcadc29eb558be7c868292c",
-        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278"
+        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278",
+        "0x67c02d42c437b092896b161d50673e700302981763d1e4cb1b987e0641e90fd0"
       ]
     },
     {
@@ -32,7 +35,15 @@
       "balance": "3000000",
       "proof": [
         "0xd1dc5c38d88bb2e57c6225fdae113367a821adea7ef4ad10262246e121888425",
-        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278"
+        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278",
+        "0x67c02d42c437b092896b161d50673e700302981763d1e4cb1b987e0641e90fd0"
+      ]
+    },
+    {
+      "address": "GBCXBGRLRODWGAHBOJKV6ZMEXWPDMEEIOM3Q2MBSD2MXFH7XZ4YPSSLP",
+      "balance": "4206967000",
+      "proof": [
+        "0x124ae8f5de88bab5e63f32318a3d57a941ba09ccc4c37bf5669bb592ddf0df38"
       ]
     }
   ]
