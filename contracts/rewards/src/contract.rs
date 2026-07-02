@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, token, Address, BytesN, Env, Vec,
-};
+use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
 
 use crate::events;
 use crate::merkle;
@@ -79,34 +77,6 @@ impl LendRewards {
         .publish(&e);
     }
 
-    pub fn distribute_ref_rewards(
-        e: Env,
-        epoch: u32,
-        merkle_root: BytesN<32>,
-        total_allocation: i128,
-    ) {
-        let admin = require_admin(&e);
-        bump_instance(&e);
-
-        let key = DataKey::RefMerkleRoot(epoch);
-        if e.storage().persistent().has(&key) {
-            panic!("cannot rewrite merkle root");
-        }
-
-        token::Client::new(&e, &read_reward_token(&e)).transfer(
-            &admin,
-            &e.current_contract_address(),
-            &total_allocation,
-        );
-
-        e.storage().persistent().set(&key, &merkle_root);
-        events::RefRewardsDistributed {
-            epoch,
-            amount: total_allocation,
-        }
-        .publish(&e);
-    }
-
     // ********** Admin: config **********
 
     pub fn set_reward_token(e: Env, new_token: Address) {
@@ -114,10 +84,7 @@ impl LendRewards {
         e.storage()
             .instance()
             .set(&DataKey::RewardToken, &new_token);
-        events::RewardTokenUpdated {
-            new_token,
-        }
-        .publish(&e);
+        events::RewardTokenUpdated { new_token }.publish(&e);
     }
 
     pub fn set_admin(e: Env, new_admin: Address) {
@@ -162,24 +129,10 @@ impl LendRewards {
             .unwrap_or_else(|| zero_root(&e))
     }
 
-    pub fn ref_merkle_root(e: Env, epoch: u32) -> BytesN<32> {
-        e.storage()
-            .persistent()
-            .get(&DataKey::RefMerkleRoot(epoch))
-            .unwrap_or_else(|| zero_root(&e))
-    }
-
     pub fn op_claimed(e: Env, op_id: u32, epoch: u32, user: Address) -> bool {
         e.storage()
             .persistent()
             .get(&DataKey::OpClaimed(op_id, epoch, user))
-            .unwrap_or(false)
-    }
-
-    pub fn ref_claimed(e: Env, epoch: u32, user: Address) -> bool {
-        e.storage()
-            .persistent()
-            .get(&DataKey::RefClaimed(epoch, user))
             .unwrap_or(false)
     }
 
@@ -192,18 +145,6 @@ impl LendRewards {
         merkle_proof: Vec<BytesN<32>>,
     ) -> bool {
         let root = Self::op_merkle_root(e.clone(), op_id, epoch);
-        let leaf = merkle::leaf(&e, &user, claimed_balance);
-        merkle::verify(&e, &merkle_proof, &root, leaf)
-    }
-
-    pub fn verify_ref_claim(
-        e: Env,
-        user: Address,
-        epoch: u32,
-        claimed_balance: i128,
-        merkle_proof: Vec<BytesN<32>>,
-    ) -> bool {
-        let root = Self::ref_merkle_root(e.clone(), epoch);
         let leaf = merkle::leaf(&e, &user, claimed_balance);
         merkle::verify(&e, &merkle_proof, &root, leaf)
     }
@@ -237,7 +178,7 @@ impl LendRewards {
         }
 
         e.storage().persistent().set(&claimed_key, &true);
-        transfer_rewards(&e, op_id, &user, claimed_balance, true);
+        transfer_rewards(&e, op_id, &user, claimed_balance);
     }
 
     pub fn claim_op_epochs(
@@ -266,92 +207,26 @@ impl LendRewards {
             }
         }
         if total > 0 {
-            transfer_rewards(&e, op_id, &user, total, true);
-        }
-    }
-
-    // ********** Referral rewards **********
-
-    pub fn claim_ref_epoch(
-        e: Env,
-        user: Address,
-        epoch: u32,
-        claimed_balance: i128,
-        merkle_proof: Vec<BytesN<32>>,
-    ) {
-        if claimed_balance <= 0 {
-            panic!("claim balance must be more than 0");
-        }
-        let claimed_key = DataKey::RefClaimed(epoch, user.clone());
-        if e.storage().persistent().get(&claimed_key).unwrap_or(false) {
-            panic!("epoch already claimed for this user");
-        }
-        if !Self::verify_ref_claim(
-            e.clone(),
-            user.clone(),
-            epoch,
-            claimed_balance,
-            merkle_proof,
-        ) {
-            panic!("Incorrect merkle proof");
-        }
-
-        e.storage().persistent().set(&claimed_key, &true);
-        transfer_rewards(&e, 0, &user, claimed_balance, false);
-    }
-
-    pub fn claim_ref_epochs(e: Env, user: Address, claims: Vec<ClaimData>) {
-        let mut total: i128 = 0;
-        for claim in claims.iter() {
-            let claimed_key = DataKey::RefClaimed(claim.epoch, user.clone());
-            if !e.storage().persistent().get(&claimed_key).unwrap_or(false) {
-                if !Self::verify_ref_claim(
-                    e.clone(),
-                    user.clone(),
-                    claim.epoch,
-                    claim.balance,
-                    claim.merkle_proof.clone(),
-                ) {
-                    panic!("Incorrect merkle proof");
-                }
-                total += claim.balance;
-                e.storage().persistent().set(&claimed_key, &true);
-            }
-        }
-        if total > 0 {
-            transfer_rewards(&e, 0, &user, total, false);
+            transfer_rewards(&e, op_id, &user, total);
         }
     }
 }
 
 /// Transfers `balance` reward tokens from the contract to `user` and emits the
 /// matching claim event.
-fn transfer_rewards(
-    e: &Env,
-    op_id: u32,
-    user: &Address,
-    balance: i128,
-    is_op: bool,
-) {
+fn transfer_rewards(e: &Env, op_id: u32, user: &Address, balance: i128) {
     if balance > 0 {
         token::Client::new(e, &read_reward_token(e)).transfer(
             &e.current_contract_address(),
             user,
             &balance,
         );
-        if is_op {
-            events::Claimed {
-                op_id,
-                user: user.clone(),
-                balance,
-            }
-            .publish(e);
-        } else {
-            events::ClaimedRef {
-                user: user.clone(),
-                balance,
-            }
-            .publish(e);
+
+        events::Claimed {
+            op_id,
+            user: user.clone(),
+            balance,
         }
+        .publish(e);
     }
 }

@@ -21,8 +21,4 @@ pub enum DataKey {
     OpMerkleRoot(u32, u32),
     // opId => epoch => user => claimed
     OpClaimed(u32, u32, Address),
-    // epoch => merkle root
-    RefMerkleRoot(u32),
-    // epoch => user => claimed
-    RefClaimed(u32, Address),
 }

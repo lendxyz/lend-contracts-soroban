@@ -26,9 +26,9 @@
 //     ]
 //   }
 //
-// The `root` is what you pass to distribute_op_rewards / distribute_ref_rewards;
-// each claim's { balance, proof } is what a user passes to claim_op_epoch /
-// claim_ref_epoch. distribute-op-rewards.sh consumes this file end to end.
+// The `root` is what you pass to distribute_op_rewards;
+// each claim's { balance, proof } is what a user passes to claim_op_epoch.
+// distribute-op-rewards.sh consumes this file end to end.
 
 "use strict";
 

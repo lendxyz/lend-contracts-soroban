@@ -31,7 +31,8 @@ fn setup<'a>() -> Setup<'a> {
     let usdc_addr = usdc_sac.address();
     let usdc = StellarAssetClient::new(&e, &usdc_addr);
 
-    let rewards_id = e.register(LendRewards, (admin.clone(), usdc_addr.clone()));
+    let rewards_id =
+        e.register(LendRewards, (admin.clone(), usdc_addr.clone()));
     let rewards = LendRewardsClient::new(&e, &rewards_id);
 
     Setup {
@@ -130,7 +131,8 @@ fn test_cannot_claim_wrong_balance() {
         .distribute_op_rewards(&OP_ID, &EPOCH, &root, &(b0 + b1));
 
     // claim a different balance than the leaf encodes
-    s.rewards.claim_op_epoch(&OP_ID, &u0, &EPOCH, &(b0 + 1), &proof0);
+    s.rewards
+        .claim_op_epoch(&OP_ID, &u0, &EPOCH, &(b0 + 1), &proof0);
 }
 
 #[test]
@@ -149,9 +151,21 @@ fn test_claim_multiple_op_epochs() {
 
     let claims = vec![
         &s.e,
-        ClaimData { epoch: 1, balance: b0, merkle_proof: proof0.clone() },
-        ClaimData { epoch: 2, balance: b0, merkle_proof: proof0.clone() },
-        ClaimData { epoch: 3, balance: b0, merkle_proof: proof0.clone() },
+        ClaimData {
+            epoch: 1,
+            balance: b0,
+            merkle_proof: proof0.clone(),
+        },
+        ClaimData {
+            epoch: 2,
+            balance: b0,
+            merkle_proof: proof0.clone(),
+        },
+        ClaimData {
+            epoch: 3,
+            balance: b0,
+            merkle_proof: proof0.clone(),
+        },
     ];
     s.rewards.claim_op_epochs(&OP_ID, &u0, &claims);
 
@@ -160,48 +174,6 @@ fn test_claim_multiple_op_epochs() {
     assert!(s.rewards.op_claimed(&OP_ID, &1, &u0));
     assert!(s.rewards.op_claimed(&OP_ID, &2, &u0));
     assert!(s.rewards.op_claimed(&OP_ID, &3, &u0));
-}
-
-#[test]
-fn test_distribute_and_claim_ref() {
-    let s = setup();
-    let u0 = Address::generate(&s.e);
-    let u1 = Address::generate(&s.e);
-    let (b0, b1) = (100i128, 200i128);
-    let (root, proof0, _) = tree2(&s.e, &u0, b0, &u1, b1);
-
-    s.usdc.mint(&s.admin, &(b0 + b1));
-    s.rewards.distribute_ref_rewards(&EPOCH, &root, &(b0 + b1));
-
-    s.rewards.claim_ref_epoch(&u0, &EPOCH, &b0, &proof0);
-    assert!(s.rewards.ref_claimed(&EPOCH, &u0));
-    let usdc = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
-    assert_eq!(usdc.balance(&u0), b0);
-}
-
-#[test]
-fn test_claim_multiple_ref_epochs() {
-    let s = setup();
-    let u0 = Address::generate(&s.e);
-    let u1 = Address::generate(&s.e);
-    let (b0, b1) = (100i128, 200i128);
-    let (root, proof0, _) = tree2(&s.e, &u0, b0, &u1, b1);
-
-    s.usdc.mint(&s.admin, &((b0 + b1) * 3));
-    for epoch in 1..=3u32 {
-        s.rewards.distribute_ref_rewards(&epoch, &root, &(b0 + b1));
-    }
-
-    let claims = vec![
-        &s.e,
-        ClaimData { epoch: 1, balance: b0, merkle_proof: proof0.clone() },
-        ClaimData { epoch: 2, balance: b0, merkle_proof: proof0.clone() },
-        ClaimData { epoch: 3, balance: b0, merkle_proof: proof0.clone() },
-    ];
-    s.rewards.claim_ref_epochs(&u0, &claims);
-
-    let usdc = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
-    assert_eq!(usdc.balance(&u0), b0 * 3);
 }
 
 #[test]
@@ -216,7 +188,13 @@ fn test_verify_helpers() {
         .distribute_op_rewards(&OP_ID, &EPOCH, &root, &(b0 + b1));
 
     assert!(s.rewards.verify_op_claim(&OP_ID, &u0, &EPOCH, &b0, &proof0));
-    assert!(!s.rewards.verify_op_claim(&OP_ID, &u0, &EPOCH, &(b0 + 1), &proof0));
+    assert!(!s.rewards.verify_op_claim(
+        &OP_ID,
+        &u0,
+        &EPOCH,
+        &(b0 + 1),
+        &proof0
+    ));
 }
 
 #[test]

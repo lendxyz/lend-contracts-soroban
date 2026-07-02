@@ -30,17 +30,3 @@ pub struct RewardsDistributed {
     pub epoch: u32,
     pub amount: i128,
 }
-
-#[contractevent]
-pub struct ClaimedRef {
-    #[topic]
-    pub user: Address,
-    pub balance: i128,
-}
-
-#[contractevent]
-pub struct RefRewardsDistributed {
-    #[topic]
-    pub epoch: u32,
-    pub amount: i128,
-}
