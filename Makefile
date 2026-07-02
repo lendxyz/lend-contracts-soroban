@@ -18,6 +18,8 @@ build:
 #   make deploy-factory
 #   make deploy-rewards
 #   make deploy-dummy-usdc
+# 	make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 # uses sample
+# 	make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 #   make start-operation OP_ID=0
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
@@ -33,6 +35,11 @@ deploy-factory:
 
 deploy-rewards:
 	./scripts/deploy-rewards.sh
+
+distribute-op-rewards: RECIPIENTS ?= scripts/recipients.json
+distribute-op-rewards: OUT ?= scripts/merkle.json
+distribute-op-rewards:
+	RECIPIENTS="$(RECIPIENTS)" OUT="$(OUT)" ./scripts/distribute-op-rewards.sh
 
 deploy-dummy-usdc:
 	./scripts/deploy-dummy-usdc.sh
@@ -64,5 +71,5 @@ clean:
 	cargo clean
 
 .PHONY: default all test build fmt clean \
-	deploy-factory deploy-rewards deploy-dummy-usdc create-operation start-operation invest \
+	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
 	invest-with-proof fund-dummy-usdc update-backend-signer

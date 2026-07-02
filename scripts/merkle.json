@@ -1,0 +1,39 @@
+{
+  "root": "0x124ae8f5de88bab5e63f32318a3d57a941ba09ccc4c37bf5669bb592ddf0df38",
+  "total_allocation": "7000000",
+  "count": 4,
+  "claims": [
+    {
+      "address": "GAIOQM6QINN427MWFQUHJZGG6T6KOE2ZGLRS2DVYIUGUOBSREDHJNTQM",
+      "balance": "1000000",
+      "proof": [
+        "0xadbe40d74fb873fb743282a63cff57ddee6bcfdb491804a2b1954c373c1efe73",
+        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64"
+      ]
+    },
+    {
+      "address": "GBME6OJOGZH235SS7ULZCOPGRKIONI6OCTVS7FBM5ZR53F43JZZPRQAH",
+      "balance": "2500000",
+      "proof": [
+        "0x689b67c0d86a3d703a1ca4decdbf06b4a5ff98c59d381c8912f585fb9a5ee5f8",
+        "0x99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64"
+      ]
+    },
+    {
+      "address": "GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA",
+      "balance": "500000",
+      "proof": [
+        "0x6056ef795eca17dab7403a6d7b4d4a2c46bbe3bf9dcadc29eb558be7c868292c",
+        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278"
+      ]
+    },
+    {
+      "address": "GCPRUMJ7KIFUZNTZL2DZIDWRMUGW3XFPU7DBJIH5AIY5GEUFZBUYATKA",
+      "balance": "3000000",
+      "proof": [
+        "0xd1dc5c38d88bb2e57c6225fdae113367a821adea7ef4ad10262246e121888425",
+        "0x7576efa7821105d881b86f53fcc4233aecb5cbed77ac9e71968a5fb306f84278"
+      ]
+    }
+  ]
+}

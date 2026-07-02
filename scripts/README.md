@@ -102,6 +102,61 @@ Merkle leaves are `keccak256(user_strkey_bytes ++ balance_i128_be)`, internal
 nodes sorted-pair keccak256 (OZ-compatible). The backend tree builder must match
 — see `contracts/rewards/src/merkle.rs`.
 
+## `distribute-op-rewards.sh`
+
+Admin-only. Builds a merkle tree for a round of operation rewards and
+distributes it on `LendRewards` for a given `OP_ID` / `EPOCH`. Wraps
+`build-merkle-tree.js`, approves the reward token, then calls
+`distribute_op_rewards(op_id, epoch, merkle_root, total_allocation)`.
+
+```bash
+SOURCE=admin \             # rewards-contract ADMIN; signs + funds the round
+REWARDS_ID=C... \          # deployed LendRewards contract
+OP_ID=1 \                  # operation id (u32)
+EPOCH=3 \                  # reward epoch (u32)
+RECIPIENTS=./round3.json \ # recipients file (see below)
+NETWORK=testnet \          # optional, default testnet
+./scripts/distribute-op-rewards.sh
+```
+
+`RECIPIENTS` is JSON, either an object `{ "G...": "1000000", ... }` or an array
+`[ { "address": "G...", "balance": "1000000" }, ... ]`; balances are reward-token
+base units (integers). Optional: `OUT` (proofs file the tree is written to;
+default `./rewards-op<OP_ID>-epoch<EPOCH>.json`), `TOTAL_ALLOCATION` (default =
+sum of balances; must be >= the sum), `REWARD_TOKEN` (default read from the
+contract), `APPROVE=0` to skip the allowance step, `EXPIRATION_LEDGER` to
+override the approval expiry.
+
+The merkle tree is built (via `build-merkle-tree.js`) as the first step of the
+same command — generation and distribution happen together, so `OUT` is written
+fresh from `RECIPIENTS` on every run. It carries `root`, `total_allocation`, and
+per-recipient `{ address, balance, proof }` — the `proof` + `balance` are what
+each user later passes to
+`claim_op_epoch(op_id, user, epoch, claimed_balance, merkle_proof)`.
+
+Via make — `RECIPIENTS` defaults to `scripts/recipients.json`, `OUT` to
+`scripts/rewards-op<OP_ID>-epoch<EPOCH>.json`:
+
+```bash
+make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3
+# or with an explicit recipients file:
+make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
+```
+
+## `build-merkle-tree.js`
+
+Pure-Node (no deps) merkle-tree builder used by `distribute-op-rewards.sh`; run
+it directly to compute a root + proofs without distributing.
+
+```bash
+node scripts/build-merkle-tree.js recipients.json [out.json]
+```
+
+Leaves are `keccak256(user_strkey_ascii ++ balance_i128_be16)`, internal nodes
+sorted-pair keccak256 (OZ `MerkleProof._hashPair`) — verified byte-for-byte
+against the contract's own leaf output. It self-verifies every proof against the
+root before emitting. Matches `contracts/rewards/src/merkle.rs`.
+
 ## `deploy-dummy-usdc.sh`
 
 Deploys `DummyUSDC`, a testnet stand-in for Circle USDC. Standard SEP-41 token
