@@ -7,3 +7,5 @@ target
 
 # Soroban test snapshots (regenerated on every `cargo test`)
 test_snapshots
+
+.DS_Store

@@ -5,7 +5,7 @@
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | TBD |
-| Testnet | CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF |
+| Testnet | CCLLIO5MTHXQTLL5EEE4C5ECX4MHMFSWDF225R64MQ62BE5MS7TTZTX3 |
 
 ## OpLend
 
@@ -14,12 +14,7 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | TBD |
-| Testnet | 09d8ee86cfc13e048ed11bf407c677e98a8473f2feaac74d06654979561bc2f0 |
-
-## OpLend testnet instances
-| Testnet operation          | Address                                    |
-| ---------------- | ------------------------------------------ |
-| Alpha | CAQKKEXY5P6KG3V3SD3BNAIDGNL55S7UEDSAQIRVZIYSPS5SLXT5OWUU|
+| Testnet | b1ebf5da73cba020222c75e894ef89adac50a7cfee545687dcd34dcd35bbb43a |
 
 
 ## Rewards
@@ -27,7 +22,7 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | TBD |
-| Testnet | CC6YK5UFLK77DASXZWXFJZ267ABXCGFOG24VTG74NZBYKEI65YCNNZGX |
+| Testnet | CCJZ37FRDICUTJQVQS7E245QT3CXK3IBAHIJM7T7TVSRMAN6E3J267JD |
 
 ## Mock USDC (testnet only)
 
