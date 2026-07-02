@@ -130,8 +130,7 @@ Constructor parameters: `admin`, `decimal` (≤ 6), `name`, `symbol`,
 
 [`contracts/rewards`](contracts/rewards) — `LendRewards`.
 
-Merkle-based reward distribution for operation rewards and referral rewards,
-indexed by epoch. The admin publishes a merkle root and funds the allocation;
+Merkle-based reward distribution for operation rewards indexed by epoch. The admin publishes a merkle root and funds the allocation;
 users claim with a merkle proof. Roots are immutable once set, claims are
 idempotent per `(scope, epoch, user)`, and the contract is upgradeable
 (admin-gated `upgrade`).
