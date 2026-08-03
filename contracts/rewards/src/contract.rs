@@ -1,19 +1,23 @@
-use soroban_sdk::{contract, contractimpl, token, Address, BytesN, Env, Vec};
+use soroban_sdk::{
+    contract, contractimpl, panic_with_error, token, Address, BytesN, Env, Vec,
+};
 
+use crate::errors::Error;
 use crate::events;
 use crate::merkle;
 use crate::storage_types::{
-    ClaimData, DataKey, INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD,
+    ClaimData, DataKey, CLAIM_BUMP_AMOUNT, CLAIM_LIFETIME_THRESHOLD,
+    INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD,
 };
 
 #[contract]
 pub struct LendRewards;
 
 fn read_admin(e: &Env) -> Address {
-    e.storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .expect("not initialized")
+    match e.storage().instance().get(&DataKey::Admin) {
+        Some(admin) => admin,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
 }
 
 fn require_admin(e: &Env) -> Address {
@@ -23,17 +27,86 @@ fn require_admin(e: &Env) -> Address {
 }
 
 fn read_reward_token(e: &Env) -> Address {
-    e.storage().instance().get(&DataKey::RewardToken).unwrap()
-}
-
-fn zero_root(e: &Env) -> BytesN<32> {
-    BytesN::from_array(e, &[0u8; 32])
+    match e.storage().instance().get(&DataKey::RewardToken) {
+        Some(token) => token,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
 }
 
 fn bump_instance(e: &Env) {
     e.storage()
         .instance()
         .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
+}
+
+fn read_root(e: &Env, op_id: u32, epoch: u32) -> Option<BytesN<32>> {
+    e.storage()
+        .persistent()
+        .get(&DataKey::OpMerkleRoot(op_id, epoch))
+}
+
+fn verify(
+    e: &Env,
+    op_id: u32,
+    user: &Address,
+    epoch: u32,
+    balance: i128,
+    proof: &Vec<BytesN<32>>,
+) -> bool {
+    match read_root(e, op_id, epoch) {
+        Some(root) => {
+            merkle::verify(e, proof, &root, merkle::leaf(e, user, balance))
+        }
+        None => false,
+    }
+}
+
+fn settle_claim(
+    e: &Env,
+    op_id: u32,
+    user: &Address,
+    epoch: u32,
+    balance: i128,
+    proof: &Vec<BytesN<32>>,
+) {
+    if !verify(e, op_id, user, epoch, balance, proof) {
+        panic_with_error!(e, Error::InvalidProof);
+    }
+
+    let persistent = e.storage().persistent();
+
+    persistent.extend_ttl(
+        &DataKey::OpMerkleRoot(op_id, epoch),
+        CLAIM_LIFETIME_THRESHOLD,
+        CLAIM_BUMP_AMOUNT,
+    );
+
+    let key = DataKey::OpClaimed(op_id, epoch, user.clone());
+    persistent.set(&key, &true);
+    persistent.extend_ttl(&key, CLAIM_LIFETIME_THRESHOLD, CLAIM_BUMP_AMOUNT);
+}
+
+fn is_claimed(e: &Env, op_id: u32, epoch: u32, user: &Address) -> bool {
+    e.storage().persistent().has(&DataKey::OpClaimed(
+        op_id,
+        epoch,
+        user.clone(),
+    ))
+}
+
+fn transfer_rewards(e: &Env, op_id: u32, user: &Address, balance: i128) {
+    token::Client::new(e, &read_reward_token(e)).transfer(
+        &e.current_contract_address(),
+        user,
+        &balance,
+    );
+
+    events::Claimed {
+        op_id,
+        user: user.clone(),
+        balance,
+    }
+    .publish(e);
 }
 
 #[contractimpl]
@@ -58,17 +131,24 @@ impl LendRewards {
         bump_instance(&e);
 
         let key = DataKey::OpMerkleRoot(op_id, epoch);
+
         if e.storage().persistent().has(&key) {
-            panic!("cannot rewrite merkle root");
+            panic_with_error!(&e, Error::RootAlreadySet);
         }
 
         token::Client::new(&e, &read_reward_token(&e)).transfer(
             &admin,
-            &e.current_contract_address(),
+            e.current_contract_address(),
             &total_allocation,
         );
 
         e.storage().persistent().set(&key, &merkle_root);
+        e.storage().persistent().extend_ttl(
+            &key,
+            CLAIM_LIFETIME_THRESHOLD,
+            CLAIM_BUMP_AMOUNT,
+        );
+
         events::RewardsDistributed {
             op_id,
             epoch,
@@ -81,6 +161,7 @@ impl LendRewards {
 
     pub fn set_reward_token(e: Env, new_token: Address) {
         require_admin(&e);
+        bump_instance(&e);
         e.storage()
             .instance()
             .set(&DataKey::RewardToken, &new_token);
@@ -89,20 +170,26 @@ impl LendRewards {
 
     pub fn set_admin(e: Env, new_admin: Address) {
         require_admin(&e);
+        bump_instance(&e);
         e.storage().instance().set(&DataKey::Admin, &new_admin);
     }
 
     /// Withdraw the full balance of any non-reward token to the admin.
     pub fn emergency_withdraw(e: Env, token_addr: Address) {
         let admin = require_admin(&e);
+        bump_instance(&e);
+
         if token_addr == read_reward_token(&e) {
-            panic!("cannot emergency withdraw reward token");
+            panic_with_error!(&e, Error::RewardTokenNotWithdrawable);
         }
+
         let client = token::Client::new(&e, &token_addr);
         let amount = client.balance(&e.current_contract_address());
+
         if amount > 0 {
             client.transfer(&e.current_contract_address(), &admin, &amount);
         }
+
         events::EmergencyWithdrawn {
             token: token_addr,
             amount,
@@ -110,7 +197,6 @@ impl LendRewards {
         .publish(&e);
     }
 
-    /// Admin-gated wasm upgrade (UUPS-equivalent).
     pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
         require_admin(&e);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -123,17 +209,12 @@ impl LendRewards {
     }
 
     pub fn op_merkle_root(e: Env, op_id: u32, epoch: u32) -> BytesN<32> {
-        e.storage()
-            .persistent()
-            .get(&DataKey::OpMerkleRoot(op_id, epoch))
-            .unwrap_or_else(|| zero_root(&e))
+        read_root(&e, op_id, epoch)
+            .unwrap_or_else(|| BytesN::from_array(&e, &[0u8; 32]))
     }
 
     pub fn op_claimed(e: Env, op_id: u32, epoch: u32, user: Address) -> bool {
-        e.storage()
-            .persistent()
-            .get(&DataKey::OpClaimed(op_id, epoch, user))
-            .unwrap_or(false)
+        is_claimed(&e, op_id, epoch, &user)
     }
 
     pub fn verify_op_claim(
@@ -144,9 +225,7 @@ impl LendRewards {
         claimed_balance: i128,
         merkle_proof: Vec<BytesN<32>>,
     ) -> bool {
-        let root = Self::op_merkle_root(e.clone(), op_id, epoch);
-        let leaf = merkle::leaf(&e, &user, claimed_balance);
-        merkle::verify(&e, &merkle_proof, &root, leaf)
+        verify(&e, op_id, &user, epoch, claimed_balance, &merkle_proof)
     }
 
     // ********** Operation rewards **********
@@ -160,24 +239,16 @@ impl LendRewards {
         merkle_proof: Vec<BytesN<32>>,
     ) {
         if claimed_balance <= 0 {
-            panic!("claim balance must be more than 0");
-        }
-        let claimed_key = DataKey::OpClaimed(op_id, epoch, user.clone());
-        if e.storage().persistent().get(&claimed_key).unwrap_or(false) {
-            panic!("epoch already claimed for this user");
-        }
-        if !Self::verify_op_claim(
-            e.clone(),
-            op_id,
-            user.clone(),
-            epoch,
-            claimed_balance,
-            merkle_proof,
-        ) {
-            panic!("Incorrect merkle proof");
+            panic_with_error!(&e, Error::InvalidClaimBalance);
         }
 
-        e.storage().persistent().set(&claimed_key, &true);
+        bump_instance(&e);
+
+        if is_claimed(&e, op_id, epoch, &user) {
+            panic_with_error!(&e, Error::AlreadyClaimed);
+        }
+
+        settle_claim(&e, op_id, &user, epoch, claimed_balance, &merkle_proof);
         transfer_rewards(&e, op_id, &user, claimed_balance);
     }
 
@@ -187,46 +258,27 @@ impl LendRewards {
         user: Address,
         claims: Vec<ClaimData>,
     ) {
+        bump_instance(&e);
         let mut total: i128 = 0;
+
         for claim in claims.iter() {
-            let claimed_key =
-                DataKey::OpClaimed(op_id, claim.epoch, user.clone());
-            if !e.storage().persistent().get(&claimed_key).unwrap_or(false) {
-                if !Self::verify_op_claim(
-                    e.clone(),
-                    op_id,
-                    user.clone(),
-                    claim.epoch,
-                    claim.balance,
-                    claim.merkle_proof.clone(),
-                ) {
-                    panic!("Incorrect merkle proof");
-                }
-                total += claim.balance;
-                e.storage().persistent().set(&claimed_key, &true);
+            if is_claimed(&e, op_id, claim.epoch, &user) {
+                continue;
             }
+
+            settle_claim(
+                &e,
+                op_id,
+                &user,
+                claim.epoch,
+                claim.balance,
+                &claim.merkle_proof,
+            );
+            total += claim.balance;
         }
+
         if total > 0 {
             transfer_rewards(&e, op_id, &user, total);
         }
-    }
-}
-
-/// Transfers `balance` reward tokens from the contract to `user` and emits the
-/// matching claim event.
-fn transfer_rewards(e: &Env, op_id: u32, user: &Address, balance: i128) {
-    if balance > 0 {
-        token::Client::new(e, &read_reward_token(e)).transfer(
-            &e.current_contract_address(),
-            user,
-            &balance,
-        );
-
-        events::Claimed {
-            op_id,
-            user: user.clone(),
-            balance,
-        }
-        .publish(e);
     }
 }

@@ -1,9 +1,10 @@
 use soroban_sdk::{
-    contract, contractimpl, Address, BytesN, Env, String, Vec,
+    contract, contractimpl, panic_with_error, Address, BytesN, Env, String, Vec,
 };
 
+use crate::errors::Error;
 use crate::types::{DataKey, Operation};
-use crate::{admin, getters, invest, operations};
+use crate::{admin, getters, invest, operations, oracle, storage as st};
 
 #[contract]
 pub struct LendFactory;
@@ -18,26 +19,25 @@ impl LendFactory {
         backend_signer: BytesN<32>,
         oplend_wasm_hash: BytesN<32>,
     ) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic!("Already initialized");
+        let instance = env.storage().instance();
+        if instance.has(&DataKey::Admin) {
+            panic_with_error!(&env, Error::AlreadyInitialized);
         }
 
-        env.storage().instance().set(&DataKey::Admin, &admin);
-        env.storage().instance().set(&DataKey::USDC, &usdc);
-        env.storage().instance().set(&DataKey::Oracle, &oracle);
-        env.storage()
-            .instance()
-            .set(&DataKey::BackendSigner, &backend_signer);
-        env.storage()
-            .persistent()
-            .set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
-        env.storage().instance().set(&DataKey::OperationCount, &0u32);
+        instance.set(&DataKey::Admin, &admin);
+        instance.set(&DataKey::Usdc, &usdc);
+        instance.set(&DataKey::BackendSigner, &backend_signer);
+        instance.set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
+        // Also caches the oracle's `decimals()`. `OperationCount` defaults to 0.
+        oracle::set_oracle(&env, &oracle);
+        st::bump_instance(&env);
     }
 
     pub fn set_oplend_wasm_hash(env: Env, oplend_wasm_hash: BytesN<32>) {
-        crate::storage::require_admin(&env);
+        st::require_admin(&env);
+        st::bump_instance(&env);
         env.storage()
-            .persistent()
+            .instance()
             .set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
     }
 
@@ -49,7 +49,12 @@ impl LendFactory {
         total_shares: i128,
         eur_per_shares: i128,
     ) -> Address {
-        operations::create_operation(&env, op_name, total_shares, eur_per_shares)
+        operations::create_operation(
+            &env,
+            op_name,
+            total_shares,
+            eur_per_shares,
+        )
     }
 
     pub fn cancel_operation(env: Env, id: u32) {
@@ -91,11 +96,22 @@ impl LendFactory {
         signature: BytesN<64>,
     ) {
         invest::fiat_invest(
-            &env, id, shares_amount, user, oplend_holder, nonce, signature,
+            &env,
+            id,
+            shares_amount,
+            user,
+            oplend_holder,
+            nonce,
+            signature,
         );
     }
 
-    pub fn gift_op_tokens(env: Env, id: u32, shares_amount: i128, user: Address) {
+    pub fn gift_op_tokens(
+        env: Env,
+        id: u32,
+        shares_amount: i128,
+        user: Address,
+    ) {
         invest::gift_op_tokens(&env, id, shares_amount, user);
     }
 
@@ -132,7 +148,12 @@ impl LendFactory {
         admin::refund_user(&env, id, user);
     }
 
-    pub fn batch_refund_users(env: Env, id: u32, users: Vec<Address>, len: u32) {
+    pub fn batch_refund_users(
+        env: Env,
+        id: u32,
+        users: Vec<Address>,
+        len: u32,
+    ) {
         admin::batch_refund_users(&env, id, users, len);
     }
 

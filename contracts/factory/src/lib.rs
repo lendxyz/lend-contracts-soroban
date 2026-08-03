@@ -2,8 +2,8 @@
 
 mod admin;
 mod contract;
-mod create_oplend;
 mod crypto;
+mod errors;
 mod events;
 mod getters;
 mod invest;
@@ -15,3 +15,4 @@ mod types;
 mod utils;
 
 pub use crate::contract::LendFactory;
+pub use crate::errors::Error;

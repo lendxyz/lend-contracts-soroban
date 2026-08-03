@@ -5,12 +5,12 @@ pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
 pub(crate) const INSTANCE_LIFETIME_THRESHOLD: u32 =
     INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
-pub(crate) const BALANCE_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
-pub(crate) const BALANCE_LIFETIME_THRESHOLD: u32 =
-    BALANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
+pub(crate) const ACCOUNT_BUMP_AMOUNT: u32 = 30 * DAY_IN_LEDGERS;
+pub(crate) const ACCOUNT_LIFETIME_THRESHOLD: u32 =
+    ACCOUNT_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
 #[derive(Clone)]
-#[contracttype]
+#[contracttype(export = false)]
 pub struct AllowanceDataKey {
     pub from: Address,
     pub spender: Address,
@@ -22,16 +22,28 @@ pub struct AllowanceValue {
     pub expiration_ledger: u32,
 }
 
+#[contracttype(export = false)]
 #[derive(Clone)]
-#[contracttype]
+pub struct Account {
+    pub balance: i128,
+    pub whitelisted: bool,
+}
+
+impl Account {
+    pub const ZERO: Account = Account {
+        balance: 0,
+        whitelisted: false,
+    };
+}
+
+#[derive(Clone)]
+#[contracttype(export = false)]
 pub enum DataKey {
     Allowance(AllowanceDataKey),
-    Balance(Address),
-    State(Address),
+    Account(Address),
     Admin,
     TotalSupply,
     MaxSupply,
     BackendSigner,
-    Whitelisted(Address),
     UsedNonce(String),
 }

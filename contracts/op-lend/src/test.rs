@@ -7,6 +7,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::{OpLendToken, OpLendTokenClient};
+use crate::errors::Error;
 
 const MAX_SUPPLY: i128 = 1_000_000;
 
@@ -67,7 +68,6 @@ fn test_mint_whitelists_and_tracks_supply() {
 }
 
 #[test]
-#[should_panic(expected = "Total supply cap exceeded")]
 fn test_supply_cap_enforced() {
     let e = Env::default();
     e.mock_all_auths();
@@ -76,7 +76,10 @@ fn test_supply_cap_enforced() {
     let user1 = Address::generate(&e);
     let token = create_token(&e, &admin);
 
-    token.mint(&user1, &(MAX_SUPPLY + 1));
+    assert_eq!(
+        token.try_mint(&user1, &(MAX_SUPPLY + 1)),
+        Err(Ok(Error::SupplyCapExceeded.into()))
+    );
 }
 
 #[test]
@@ -98,7 +101,6 @@ fn test_transfer_requires_whitelist() {
 }
 
 #[test]
-#[should_panic(expected = "address is not whitelisted")]
 fn test_transfer_to_non_whitelisted_fails() {
     let e = Env::default();
     e.mock_all_auths();
@@ -109,7 +111,10 @@ fn test_transfer_to_non_whitelisted_fails() {
     let token = create_token(&e, &admin);
 
     token.mint(&user1, &1000);
-    token.transfer(&user1, &user2, &600);
+    assert_eq!(
+        token.try_transfer(&user1, &user2, &600),
+        Err(Ok(Error::NotWhitelisted.into()))
+    );
 }
 
 #[test]
@@ -182,7 +187,6 @@ fn test_whitelist_user_with_signature() {
 }
 
 #[test]
-#[should_panic(expected = "nonce already used")]
 fn test_whitelist_user_nonce_replay() {
     let e = Env::default();
     e.mock_all_auths();
@@ -195,7 +199,10 @@ fn test_whitelist_user_nonce_replay() {
     let sig = sign_whitelist(&e, &token, &user, &nonce);
 
     token.whitelist_user(&user, &nonce, &sig);
-    token.whitelist_user(&user, &nonce, &sig);
+    assert_eq!(
+        token.try_whitelist_user(&user, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
 }
 
 #[test]
@@ -249,7 +256,6 @@ fn test_set_admin() {
 }
 
 #[test]
-#[should_panic(expected = "insufficient balance")]
 fn transfer_insufficient_balance() {
     let e = Env::default();
     e.mock_all_auths();
@@ -261,11 +267,13 @@ fn transfer_insufficient_balance() {
 
     token.mint(&user1, &1000);
     token.whitelist_user_admin(&user2, &true);
-    token.transfer(&user1, &user2, &1001);
+    assert_eq!(
+        token.try_transfer(&user1, &user2, &1001),
+        Err(Ok(Error::InsufficientBalance.into()))
+    );
 }
 
 #[test]
-#[should_panic(expected = "insufficient allowance")]
 fn transfer_from_insufficient_allowance() {
     let e = Env::default();
     e.mock_all_auths();
@@ -279,11 +287,14 @@ fn transfer_from_insufficient_allowance() {
     token.mint(&user1, &1000);
     token.whitelist_user_admin(&user2, &true);
     token.approve(&user1, &spender, &100, &200);
-    token.transfer_from(&spender, &user1, &user2, &101);
+    assert_eq!(
+        token.try_transfer_from(&spender, &user1, &user2, &101),
+        Err(Ok(Error::InsufficientAllowance.into()))
+    );
 }
 
 #[test]
-#[should_panic(expected = "Decimal must not be greater than 6")]
+#[should_panic(expected = "Error(Contract, #2)")]
 fn decimal_over_six() {
     let e = Env::default();
     let admin = Address::generate(&e);

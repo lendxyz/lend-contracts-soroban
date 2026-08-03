@@ -20,6 +20,8 @@ reward distribution) and `DummyUSDC` (a testnet-only USDC stand-in).
   - [DummyUSDC](#dummyusdc)
 - [Backend signature scheme](#backend-signature-scheme)
 - [Oracle adapter](#oracle-adapter)
+- [Storage layout](#storage-layout)
+- [Errors](#errors)
 - [Function signatures](#function-signatures)
 - [Building](#building)
 - [Testing](#testing)
@@ -189,8 +191,46 @@ pub trait OracleInterface {
 - `amount_in(eur_per_shares, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
 - `amount_out(eur_per_shares, usdc)` → shares (`SHARE_PRECISION = 1e12`).
 
+`decimals()` is read once — at `initialize`, and again on every
+`update_oracle_address` — and cached in instance storage, so pricing costs a
+single cross-contract call. Re-run `update_oracle_address` (the same address is
+fine) if a feed ever changes its decimals in place.
+
 Tests inject a mock oracle implementing this interface; production points at the
 deployed Reflector feed via `update_oracle_address`.
+
+---
+
+## Storage layout
+
+State that the EVM original held in parallel `mapping`s is packed into one
+ledger entry per subject. On Soroban every key is a separate entry with its own
+footprint slot, TTL entry and rent, so the split form made a single `invest`
+touch a dozen entries.
+
+| Key | Holds | Replaces |
+| --- | --- | --- |
+| `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / predeposits-open / withdrawn bits in one `u32` | 8 separate per-operation keys |
+| `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
+| `Position(id, user)` | USDC invested, predeposited shares, gifted shares | 3 separate per-(op, user) keys |
+| `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
+
+`Operation` — the struct returned by `operations` / `get_operation` — is
+unchanged; it is assembled on read from `Op(id)` + `OpName(id)`.
+
+Every state-changing entry point extends the instance TTL, and writes to
+per-operation, per-position, merkle-root and claim entries extend theirs. Used
+nonces stay **persistent** rather than temporary on purpose: `fiat_invest` is
+authorized by the backend signature alone, so a nonce that aged out would let
+anyone replay an old signature.
+
+---
+
+## Errors
+
+Failures are typed contract errors, surfaced to clients as `Error(Contract, #n)`
+— see `errors.rs` in each contract for the code list. Tests assert on them via
+the generated `try_*` client methods.
 
 ---
 

@@ -1,15 +1,32 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
-use crate::types::{DataKey, Operation};
+use crate::errors::Error;
+use crate::types::{DataKey, OpData, Position};
 
-pub fn read_admin(e: &Env) -> Address {
+const DAY_IN_LEDGERS: u32 = 17_280;
+
+const INSTANCE_BUMP: u32 = 30 * DAY_IN_LEDGERS;
+const INSTANCE_THRESHOLD: u32 = INSTANCE_BUMP - DAY_IN_LEDGERS;
+
+const OP_BUMP: u32 = 90 * DAY_IN_LEDGERS;
+const OP_THRESHOLD: u32 = OP_BUMP - 7 * DAY_IN_LEDGERS;
+
+/// Extends the instance (and code) TTL. Called by every state-changing entry
+pub fn bump_instance(e: &Env) {
     e.storage()
         .instance()
-        .get(&DataKey::Admin)
-        .expect("not initialized")
+        .extend_ttl(INSTANCE_THRESHOLD, INSTANCE_BUMP);
 }
 
-/// Reads the admin and requires its authorization (owner-only gate).
+// --- instance config ---
+
+pub fn read_admin(e: &Env) -> Address {
+    match e.storage().instance().get(&DataKey::Admin) {
+        Some(admin) => admin,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
+}
+
 pub fn require_admin(e: &Env) -> Address {
     let admin = read_admin(e);
     admin.require_auth();
@@ -17,7 +34,21 @@ pub fn require_admin(e: &Env) -> Address {
 }
 
 pub fn read_usdc(e: &Env) -> Address {
-    e.storage().instance().get(&DataKey::USDC).unwrap()
+    match e.storage().instance().get(&DataKey::Usdc) {
+        Some(usdc) => usdc,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
+}
+
+pub fn usdc_client(e: &Env) -> token::Client<'_> {
+    token::Client::new(e, &read_usdc(e))
+}
+
+pub fn read_backend_signer(e: &Env) -> BytesN<32> {
+    match e.storage().instance().get(&DataKey::BackendSigner) {
+        Some(signer) => signer,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
 }
 
 pub fn operation_count(e: &Env) -> u32 {
@@ -27,82 +58,66 @@ pub fn operation_count(e: &Env) -> u32 {
         .unwrap_or(0)
 }
 
-/// Panics with `OpNotExist`-equivalent if the id is out of range.
+pub fn set_operation_count(e: &Env, count: u32) {
+    e.storage().instance().set(&DataKey::OperationCount, &count);
+}
+
 pub fn require_op_exists(e: &Env, id: u32) {
-    if id == 0 || id > operation_count(e) {
-        panic!("operation does not exist");
+    if !e.storage().persistent().has(&DataKey::Op(id)) {
+        panic_with_error!(e, Error::OperationNotFound);
     }
 }
 
-pub fn get_operation(e: &Env, id: u32) -> Operation {
-    require_op_exists(e, id);
+// --- operations ---
+
+pub fn read_op(e: &Env, id: u32) -> OpData {
+    match e.storage().persistent().get(&DataKey::Op(id)) {
+        Some(op) => op,
+        None => panic_with_error!(e, Error::OperationNotFound),
+    }
+}
+
+pub fn write_op(e: &Env, id: u32, op: &OpData) {
+    let key = DataKey::Op(id);
+    e.storage().persistent().set(&key, op);
     e.storage()
         .persistent()
-        .get(&DataKey::Operation(id))
-        .expect("operation does not exist")
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
-pub fn funding_progress(e: &Env, id: u32) -> i128 {
+pub fn read_op_name(e: &Env, id: u32) -> String {
+    match e.storage().persistent().get(&DataKey::OpName(id)) {
+        Some(name) => name,
+        None => panic_with_error!(e, Error::OperationNotFound),
+    }
+}
+
+pub fn write_op_name(e: &Env, id: u32, name: &String) {
+    let key = DataKey::OpName(id);
+    e.storage().persistent().set(&key, name);
     e.storage()
         .persistent()
-        .get(&DataKey::FundingProgress(id))
-        .unwrap_or(0)
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
-pub fn set_funding_progress(e: &Env, id: u32, v: i128) {
-    e.storage().persistent().set(&DataKey::FundingProgress(id), &v);
-}
+// --- positions ---
 
-pub fn usdc_raised(e: &Env, id: u32) -> i128 {
+pub fn read_position(e: &Env, id: u32, user: &Address) -> Position {
     e.storage()
         .persistent()
-        .get(&DataKey::UsdcRaised(id))
-        .unwrap_or(0)
+        .get(&DataKey::Position(id, user.clone()))
+        .unwrap_or(Position::ZERO)
 }
 
-pub fn set_usdc_raised(e: &Env, id: u32, v: i128) {
-    e.storage().persistent().set(&DataKey::UsdcRaised(id), &v);
-}
-
-pub fn operation_started(e: &Env, id: u32) -> bool {
+pub fn write_position(e: &Env, id: u32, user: &Address, pos: &Position) {
+    let key = DataKey::Position(id, user.clone());
+    e.storage().persistent().set(&key, pos);
     e.storage()
         .persistent()
-        .get(&DataKey::OperationStarted(id))
-        .unwrap_or(false)
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
-pub fn operation_canceled(e: &Env, id: u32) -> bool {
-    e.storage()
-        .persistent()
-        .get(&DataKey::OperationCanceled(id))
-        .unwrap_or(false)
-}
-
-pub fn funding_paused(e: &Env, id: u32) -> bool {
-    e.storage()
-        .persistent()
-        .get(&DataKey::FundingPaused(id))
-        .unwrap_or(false)
-}
-
-pub fn predeposits_open(e: &Env, id: u32) -> bool {
-    e.storage()
-        .persistent()
-        .get(&DataKey::PredepositsOpen(id))
-        .unwrap_or(false)
-}
-
-pub fn usdc_withdrawn(e: &Env, id: u32) -> bool {
-    e.storage()
-        .persistent()
-        .get(&DataKey::UsdcWithdrew(id))
-        .unwrap_or(false)
-}
-
-/// Whether the operation has started and is fully funded.
-pub fn is_finished(e: &Env, id: u32) -> bool {
-    operation_started(e, id) && funding_progress(e, id) >= get_operation(e, id).total_shares
-}
+// --- blacklist ---
 
 pub fn is_blacklisted(e: &Env, user: &Address) -> bool {
     e.storage()
@@ -111,47 +126,16 @@ pub fn is_blacklisted(e: &Env, user: &Address) -> bool {
         .unwrap_or(false)
 }
 
+pub fn set_blacklisted(e: &Env, user: &Address, state: bool) {
+    let key = DataKey::Blacklisted(user.clone());
+    e.storage().persistent().set(&key, &state);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
+}
+
 pub fn require_not_blacklisted(e: &Env, user: &Address) {
     if is_blacklisted(e, user) {
-        panic!("user is blacklisted");
+        panic_with_error!(e, Error::Blacklisted);
     }
-}
-
-pub fn predeposits(e: &Env, id: u32, user: &Address) -> i128 {
-    e.storage()
-        .persistent()
-        .get(&DataKey::Predeposits(id, user.clone()))
-        .unwrap_or(0)
-}
-
-pub fn set_predeposits(e: &Env, id: u32, user: &Address, v: i128) {
-    e.storage()
-        .persistent()
-        .set(&DataKey::Predeposits(id, user.clone()), &v);
-}
-
-pub fn gifted(e: &Env, id: u32, user: &Address) -> i128 {
-    e.storage()
-        .persistent()
-        .get(&DataKey::Gifted(id, user.clone()))
-        .unwrap_or(0)
-}
-
-pub fn set_gifted(e: &Env, id: u32, user: &Address, v: i128) {
-    e.storage()
-        .persistent()
-        .set(&DataKey::Gifted(id, user.clone()), &v);
-}
-
-pub fn user_invested(e: &Env, id: u32, user: &Address) -> i128 {
-    e.storage()
-        .persistent()
-        .get(&DataKey::UserInvested(id, user.clone()))
-        .unwrap_or(0)
-}
-
-pub fn set_user_invested(e: &Env, id: u32, user: &Address, v: i128) {
-    e.storage()
-        .persistent()
-        .set(&DataKey::UserInvested(id, user.clone()), &v);
 }

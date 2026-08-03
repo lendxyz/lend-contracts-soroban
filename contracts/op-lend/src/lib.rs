@@ -1,13 +1,14 @@
 #![no_std]
 
+mod account;
 mod admin;
 mod allowance;
-mod balance;
 mod contract;
 mod crypto;
+mod errors;
 mod metadata;
 mod storage_types;
 mod test;
-mod whitelist;
 
 pub use crate::contract::OpLendToken;
+pub use crate::errors::Error;

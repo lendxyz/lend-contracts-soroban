@@ -6,6 +6,7 @@ use soroban_sdk::{
 };
 
 use crate::contract::{LendRewards, LendRewardsClient};
+use crate::errors::Error;
 use crate::merkle;
 use crate::storage_types::ClaimData;
 
@@ -91,7 +92,6 @@ fn test_distribute_and_claim_op() {
 }
 
 #[test]
-#[should_panic(expected = "cannot rewrite merkle root")]
 fn test_cannot_rewrite_root() {
     let s = setup();
     let u0 = Address::generate(&s.e);
@@ -99,11 +99,14 @@ fn test_cannot_rewrite_root() {
     let (root, _, _) = tree2(&s.e, &u0, 100, &u1, 200);
     s.usdc.mint(&s.admin, &600);
     s.rewards.distribute_op_rewards(&OP_ID, &EPOCH, &root, &300);
-    s.rewards.distribute_op_rewards(&OP_ID, &EPOCH, &root, &300);
+    assert_eq!(
+        s.rewards
+            .try_distribute_op_rewards(&OP_ID, &EPOCH, &root, &300),
+        Err(Ok(Error::RootAlreadySet.into()))
+    );
 }
 
 #[test]
-#[should_panic(expected = "epoch already claimed for this user")]
 fn test_cannot_claim_op_twice() {
     let s = setup();
     let u0 = Address::generate(&s.e);
@@ -115,11 +118,14 @@ fn test_cannot_claim_op_twice() {
         .distribute_op_rewards(&OP_ID, &EPOCH, &root, &(b0 + b1));
 
     s.rewards.claim_op_epoch(&OP_ID, &u0, &EPOCH, &b0, &proof0);
-    s.rewards.claim_op_epoch(&OP_ID, &u0, &EPOCH, &b0, &proof0);
+    assert_eq!(
+        s.rewards
+            .try_claim_op_epoch(&OP_ID, &u0, &EPOCH, &b0, &proof0),
+        Err(Ok(Error::AlreadyClaimed.into()))
+    );
 }
 
 #[test]
-#[should_panic(expected = "Incorrect merkle proof")]
 fn test_cannot_claim_wrong_balance() {
     let s = setup();
     let u0 = Address::generate(&s.e);
@@ -131,8 +137,11 @@ fn test_cannot_claim_wrong_balance() {
         .distribute_op_rewards(&OP_ID, &EPOCH, &root, &(b0 + b1));
 
     // claim a different balance than the leaf encodes
-    s.rewards
-        .claim_op_epoch(&OP_ID, &u0, &EPOCH, &(b0 + 1), &proof0);
+    assert_eq!(
+        s.rewards
+            .try_claim_op_epoch(&OP_ID, &u0, &EPOCH, &(b0 + 1), &proof0),
+        Err(Ok(Error::InvalidProof.into()))
+    );
 }
 
 #[test]
@@ -214,10 +223,12 @@ fn test_emergency_withdraw() {
 }
 
 #[test]
-#[should_panic(expected = "cannot emergency withdraw reward token")]
 fn test_emergency_withdraw_reward_token_fails() {
     let s = setup();
-    s.rewards.emergency_withdraw(&s.usdc_addr);
+    assert_eq!(
+        s.rewards.try_emergency_withdraw(&s.usdc_addr),
+        Err(Ok(Error::RewardTokenNotWithdrawable.into()))
+    );
 }
 
 #[test]
@@ -232,4 +243,64 @@ fn test_set_reward_token_and_admin() {
     // new admin can set reward token back
     s.rewards.set_reward_token(&s.usdc_addr);
     assert_eq!(s.rewards.reward_token(), s.usdc_addr);
+}
+
+/// Leaves and roots must stay byte-compatible with the off-chain builder
+/// (`scripts/build-merkle-tree.js`), which hashes the ASCII strkey followed by
+/// the 16-byte big-endian balance. This fixture is that script's recorded output
+/// (`scripts/merkle.json`), so a change to `merkle::leaf` or the pair ordering
+/// breaks here rather than on mainnet.
+#[test]
+fn test_verifies_offchain_tree_fixture() {
+    let s = setup();
+    let root = BytesN::from_array(
+        &s.e,
+        &hex32(
+            "77ab6b661e5aef17038cafaf9b5d6dee56a2ecd32cf6340da39413f18b36f963",
+        ),
+    );
+    s.usdc.mint(&s.admin, &4_213_967_000);
+    s.rewards
+        .distribute_op_rewards(&OP_ID, &EPOCH, &root, &4_213_967_000);
+
+    let user = Address::from_str(
+        &s.e,
+        "GAIOQM6QINN427MWFQUHJZGG6T6KOE2ZGLRS2DVYIUGUOBSREDHJNTQM",
+    );
+    let proof = vec![
+        &s.e,
+        BytesN::from_array(
+            &s.e,
+            &hex32("adbe40d74fb873fb743282a63cff57ddee6bcfdb491804a2b1954c373c1efe73"),
+        ),
+        BytesN::from_array(
+            &s.e,
+            &hex32("99e06b1d3f324a5e7f71f5a18c52652b45a32046d4f21d208cac116c763a9a64"),
+        ),
+        BytesN::from_array(
+            &s.e,
+            &hex32("67c02d42c437b092896b161d50673e700302981763d1e4cb1b987e0641e90fd0"),
+        ),
+    ];
+
+    assert!(s
+        .rewards
+        .verify_op_claim(&OP_ID, &user, &EPOCH, &1_000_000, &proof));
+    // Same proof, wrong balance => different leaf => no match.
+    assert!(!s
+        .rewards
+        .verify_op_claim(&OP_ID, &user, &EPOCH, &1_000_001, &proof));
+}
+
+fn hex32(s: &str) -> [u8; 32] {
+    let bytes = s.as_bytes();
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(
+            core::str::from_utf8(&bytes[i * 2..i * 2 + 2]).unwrap(),
+            16,
+        )
+        .unwrap();
+    }
+    out
 }
