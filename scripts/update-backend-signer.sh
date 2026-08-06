@@ -20,7 +20,7 @@ set -euo pipefail
 NETWORK="${NETWORK:-testnet}"
 case "$NETWORK" in
   testnet)
-    : "${FACTORY_ID:=CCLLIO5MTHXQTLL5EEE4C5ECX4MHMFSWDF225R64MQ62BE5MS7TTZTX3}"
+    : "${FACTORY_ID:=CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD}"
     ;;
   # TODO: change this when mainnet
   mainnet|pubnet|public)
