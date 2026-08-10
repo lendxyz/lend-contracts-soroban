@@ -56,15 +56,22 @@ case "$NETWORK" in
   mainnet | pubnet | public)
     NETWORK=mainnet
 
-    # Ledger signing. `stellar keys` has no ledger-backed identity, so the CLI
-    # cannot derive the address from the device: $SOURCE must be the account
-    # itself. Either paste the G... here, or alias it once with
-    #   stellar keys add lend-mainnet --public-key G...
-    # and set SOURCE=lend-mainnet.
-    : "${SOURCE:=}" # TODO: mainnet signer address (G...)
-    : "${SIGN_WITH_LEDGER:=1}"
-    # Derivation path index, m/44'/148'/<LEDGER_HD_PATH>'.
+    # Ledger signing. LEDGER_HD_PATH is the only knob: it picks both the account
+    # (SOURCE=ledger:<index>, resolved off the device) and the signing key
+    # (--hd-path), so the two can never drift apart. The device has to be
+    # plugged in and unlocked with the Stellar app open.
+    #
+    # Freighter's default account is m/44'/148'/0' -> index 0. To find the index
+    # of an address Freighter already shows you, match it in this list:
+    #   for i in 0 1 2 3 4; do echo "$i $(stellar keys public-key ledger:$i)"; done
+    # (Freighter's "Ledger N" account *name* is not the index.)
     : "${LEDGER_HD_PATH:=0}"
+    : "${SOURCE:=ledger:$LEDGER_HD_PATH}"
+    : "${SIGN_WITH_LEDGER:=1}"
+    # To resolve the address without the device, park it in an identity instead
+    # and keep LEDGER_HD_PATH pointing at that same index:
+    #   stellar keys add lend-mainnet --public-key "$(stellar keys public-key ledger:0)"
+    #   SOURCE=lend-mainnet ./scripts/...
 
     # TODO: fill in after the mainnet deploy; also record in DEPLOYMENTS.md.
     : "${FACTORY_ID:=}"
