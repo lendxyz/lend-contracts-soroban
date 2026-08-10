@@ -26,6 +26,7 @@ build:
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
 #   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
+#   make upgrade-contract CONTRACT=factory   # in place, same id + state
 #
 # Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
 #   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
@@ -35,6 +36,10 @@ deploy-factory:
 
 deploy-rewards:
 	./scripts/deploy-rewards.sh
+
+# In-place code swap for contracts that expose upgrade(); see the script header.
+upgrade-contract:
+	./scripts/upgrade-contract.sh
 
 distribute-op-rewards: RECIPIENTS ?= scripts/recipients.json
 distribute-op-rewards: OUT ?= scripts/merkle.json
@@ -72,4 +77,4 @@ clean:
 
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
-	invest-with-proof fund-dummy-usdc update-backend-signer
+	invest-with-proof fund-dummy-usdc update-backend-signer upgrade-contract

@@ -150,6 +150,23 @@ fn test_get_amount_in_out() {
     assert_eq!(s.factory.get_amount_out(&id, &1100), 100);
 }
 
+/// `upgrade` really swaps the executable: after pointing the factory at the
+/// op-lend wasm, the instance no longer answers factory calls. Nothing else in
+/// the repo could catch a no-op upgrade, since the contract id never changes.
+#[test]
+fn test_upgrade_replaces_the_executable() {
+    let s = setup();
+    create_op(&s, 1000);
+    assert_eq!(s.factory.operation_count(), 1);
+
+    let other_wasm = s.e.deployer().upload_contract_wasm(oplend::WASM);
+    s.factory.upgrade(&other_wasm);
+
+    // State survived, but the code behind it is op-lend now, which has no
+    // `operation_count`.
+    assert!(s.factory.try_operation_count().is_err());
+}
+
 /// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
 fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
     let admin = Address::generate(e);
