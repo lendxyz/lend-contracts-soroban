@@ -24,7 +24,7 @@ echo "==> Creating operation '$OP_NAME' on $FACTORY_ID ($NETWORK)..."
 OP_TOKEN="$(stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- create_operation \
   --op_name "$OP_NAME" \

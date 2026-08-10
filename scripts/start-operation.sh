@@ -22,7 +22,7 @@ echo "==> Starting operation $OP_ID on $FACTORY_ID ($NETWORK)..."
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- start_operation \
   --id "$OP_ID"

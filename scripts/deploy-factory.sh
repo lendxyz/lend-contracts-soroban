@@ -45,7 +45,7 @@ echo "==> Uploading op-lend wasm..."
 OPLEND_WASM_HASH="$(stellar contract upload \
   --wasm "$OPLEND_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" | tail -n1)"
 echo "    op-lend wasm hash: $OPLEND_WASM_HASH"
 
@@ -53,7 +53,7 @@ echo "==> Deploying factory..."
 FACTORY_ID="$(stellar contract deploy \
   --wasm "$FACTORY_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" | tail -n1)"
 echo "    factory id: $FACTORY_ID"
 
@@ -61,7 +61,7 @@ echo "==> Initializing factory..."
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- initialize \
   --admin "$ADMIN" \

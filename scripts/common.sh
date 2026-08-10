@@ -26,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WASM_DIR="$REPO_ROOT/target/wasm32v1-none/release"
 
-NETWORK="${NETWORK:-testnet}"
+NETWORK="${NETWORK:-mainnet}"
 
 case "$NETWORK" in
   # ---------------------------------------------------------------- testnet --
@@ -48,7 +48,8 @@ case "$NETWORK" in
     # Backend ed25519 key that authorizes invest / predeposit / fiat-invest.
     : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
 
-    : "${RPC_URL:=https://soroban-testnet.stellar.org}"
+    : "${RPC_URL:=https://soroban-rpc.testnet.stellar.gateway.fm}"
+    : "${NETWORK_PASSPHRASE:=Test SDF Network ; September 2015}"
     : "${API_BASE:=https://api-staging.lend.xyz/v1}"
     ;;
 
@@ -80,9 +81,10 @@ case "$NETWORK" in
     # Circle USDC SAC + Reflector FX oracle. Verified 2026-06-02.
     : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
-    : "${BACKEND_SIGNER:=}" # TODO: production backend signer (G... or 64 hex)
+    : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
 
-    : "${RPC_URL:=https://mainnet.sorobanrpc.com}"
+    : "${RPC_URL:=https://soroban-rpc.mainnet.stellar.gateway.fm}"
+    : "${NETWORK_PASSPHRASE:=Public Global Stellar Network ; September 2015}"
     : "${API_BASE:=https://api.lend.xyz/v1}"
     ;;
 
@@ -91,6 +93,17 @@ case "$NETWORK" in
     exit 1
     ;;
 esac
+
+# Network flags spliced into every stellar call as "${NETWORK_ARGS[@]}". The CLI
+# ships `mainnet` with a placeholder rpc url ("Bring Your Own: https://..."), so
+# --network mainnet alone fails; and once --rpc-url is given the CLI stops taking
+# the passphrase from --network. Passing both bypasses `stellar network ls`
+# config entirely, so a run does not depend on machine-local CLI state.
+[ -n "$RPC_URL" ] && [ -n "$NETWORK_PASSPHRASE" ] || {
+  echo "error: RPC_URL and NETWORK_PASSPHRASE must both be set for $NETWORK" >&2
+  exit 1
+}
+NETWORK_ARGS=(--rpc-url "$RPC_URL" --network-passphrase "$NETWORK_PASSPHRASE")
 
 # Signing flags spliced into every stellar call as "${SIGN_ARGS[@]}". Empty
 # means "sign locally with the key behind $SOURCE"; with a ledger the device

@@ -32,7 +32,7 @@ echo "==> Minting $AMOUNT_WHOLE dUSDC ($AMOUNT base units) to $TO on $NETWORK...
 stellar contract invoke \
   --id "$DUMMY_USDC_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- mint \
   --to "$TO" \

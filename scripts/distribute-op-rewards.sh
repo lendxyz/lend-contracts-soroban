@@ -81,7 +81,7 @@ if [ "$APPROVE" = "1" ]; then
   # Read the token off the contract so the approval can never target the wrong
   # one. --send=no keeps this a simulation (no signature, no ledger prompt).
   REWARD_TOKEN="${REWARD_TOKEN:-$(stellar contract invoke \
-    --id "$REWARDS_ID" --source "$SOURCE" --network "$NETWORK" --send=no \
+    --id "$REWARDS_ID" --source "$SOURCE" "${NETWORK_ARGS[@]}" --send=no \
     -- reward_token | tr -d '"')}"
   # Approval expires ~30 days out (5s ledger cadence => 518400 ledgers).
   if [ -z "${EXPIRATION_LEDGER:-}" ]; then
@@ -97,7 +97,7 @@ if [ "$APPROVE" = "1" ]; then
   stellar contract invoke \
     --id "$REWARD_TOKEN" \
     --source "$SOURCE" \
-    --network "$NETWORK" \
+    "${NETWORK_ARGS[@]}" \
     "${SIGN_ARGS[@]}" \
     -- approve \
     --from "$ADMIN" \
@@ -111,7 +111,7 @@ echo "==> Distributing op rewards..." >&2
 stellar contract invoke \
   --id "$REWARDS_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- distribute_op_rewards \
   --op_id "$OP_ID" \

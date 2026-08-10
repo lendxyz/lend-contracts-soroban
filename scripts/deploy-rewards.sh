@@ -40,7 +40,7 @@ echo "==> Deploying LendRewards..."
 REWARDS_ID="$(stellar contract deploy \
   --wasm "$REWARDS_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- \
   --admin "$ADMIN" \

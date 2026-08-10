@@ -36,7 +36,7 @@ echo "==> Investing in operation $OP_ID on $FACTORY_ID ($NETWORK) as $INVESTOR..
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- invest \
   --user "$INVESTOR" \

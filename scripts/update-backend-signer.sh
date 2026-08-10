@@ -28,7 +28,7 @@ echo "==> Updating backend signer on $FACTORY_ID ($NETWORK) to $BACKEND_SIGNER..
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- update_backend_signer \
   --new_signer "$BACKEND_SIGNER"

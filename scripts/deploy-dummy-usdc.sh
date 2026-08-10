@@ -46,7 +46,7 @@ echo "==> Deploying DummyUSDC..."
 DUMMY_USDC_ID="$(stellar contract deploy \
   --wasm "$DUMMY_USDC_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- \
   --admin "$ADMIN" \
@@ -61,7 +61,7 @@ echo "==> Minting ${MINT_WHOLE} $SYMBOL to admin ($MINT_AMOUNT base units)..."
 stellar contract invoke \
   --id "$DUMMY_USDC_ID" \
   --source "$SOURCE" \
-  --network "$NETWORK" \
+  "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   -- \
   mint \
