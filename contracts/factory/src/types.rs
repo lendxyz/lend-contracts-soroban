@@ -103,8 +103,8 @@ impl Position {
 pub enum DataKey {
     Admin,
     Usdc,
+    UsdcDecimals,
     Oracle,
-    /// Cached `decimals()` of the oracle, refreshed whenever the oracle is set.
     OracleDecimals,
     BackendSigner,
     OpLendWasmHash,

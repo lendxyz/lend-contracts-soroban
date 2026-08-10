@@ -196,6 +196,29 @@ pub trait OracleInterface {
 single cross-contract call. Re-run `update_oracle_address` (the same address is
 fine) if a feed ever changes its decimals in place.
 
+### Decimals
+
+Everything internal is 6-decimal: `eur_per_shares`, `total_shares`,
+`funding_progress`, the normalized oracle price, and the op-lend share token
+(the factory passes `6` to its constructor, which rejects anything higher).
+
+The one exception is the leg that moves USDC. **Circle's USDC is a classic
+Stellar asset behind a SAC, so it reports 7 decimals**, and the testnet
+DummyUSDC is deployed with 7 to match. The factory never assumes either value:
+`initialize` caches the USDC token's `decimals()` alongside the oracle's, and
+`amount_in` / `amount_out` convert between the 6-decimal pricing space and the
+token's own base units. `usdc_raised`, `Position::invested` and the amounts in
+`Invested` / `Refunded` events are all in USDC base units — read them against
+the token's `decimals()`, never against a hardcoded 1e6.
+
+`DataKey::Usdc` is write-once: the cached scale is only correct for the token it
+was initialized with, so pointing the factory at a USDC with different decimals
+means a fresh deploy, not a setter. Swapping it in place would also invalidate
+every `usdc_raised` already denominated in the old token's units.
+
+The Reflector feed reports **14** decimals (verified on both networks) and
+`scale_to_6` normalizes it; the residual truncation is ~5e-7 USD per EUR.
+
 Tests inject a mock oracle implementing this interface; production points at the
 deployed Reflector feed via `update_oracle_address`.
 

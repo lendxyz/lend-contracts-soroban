@@ -40,7 +40,10 @@ case "$NETWORK" in
     : "${REWARDS_ID:=CASVCVOAEAQCH5M3SYLCKKD3LRPA4JO2776EIKJQ2FJOF4KFONG223YW}"
     : "${DUMMY_USDC_ID:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
 
-    # DummyUSDC stands in for Circle USDC on testnet.
+    # DummyUSDC stands in for Circle USDC on testnet, and is now deployed with 7
+    # decimals to match it. NOTE: the id above is the older 6-decimal token; a
+    # 7-decimal redeploy needs a new FACTORY_ID too, since the factory caches
+    # the USDC scale at initialize and never re-reads it.
     : "${USDC:=$DUMMY_USDC_ID}"
     # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
     # EUR). Verified 2026-06-02 on-chain.

@@ -37,6 +37,20 @@ impl MockOracle {
     }
 }
 
+/// A USDC whose scale differs from the 7-decimal SAC the rest of the tests use.
+/// The value here MUST stay 6: the point is the contrast, so that a hardcoded
+/// scale anywhere in the pricing path shows up as a failure. Only `decimals()`
+/// is needed — the pricing path reads it, nothing transfers.
+#[contract]
+pub struct MockToken6;
+
+#[contractimpl]
+impl MockToken6 {
+    pub fn decimals(_e: Env) -> u32 {
+        6
+    }
+}
+
 const EUR_PER_SHARE: i128 = 1_000_000; // 1 EUR (6 decimals)
 
 fn signer_key() -> SigningKey {
@@ -129,10 +143,83 @@ fn test_create_operation() {
 fn test_get_amount_in_out() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
-    // 100 shares * 1 EUR * 1.1 USD = 110 USDC units
-    assert_eq!(s.factory.get_amount_in(&id, &100), 110);
-    // inverse-ish
-    assert!(s.factory.get_amount_out(&id, &110) > 0);
+    // 100 shares * 1 EUR * 1.1 USD = 110 six-decimal USDC, which is 1100 base
+    // units on the 7-decimal SAC the tests run against.
+    assert_eq!(s.factory.get_amount_in(&id, &100), 1100);
+    // Exact round trip back to the shares that produced it.
+    assert_eq!(s.factory.get_amount_out(&id, &1100), 100);
+}
+
+/// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
+fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
+    let admin = Address::generate(e);
+    let oracle_addr = e.register(MockOracle, ());
+    let signer =
+        BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
+    let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
+    let factory = LendFactoryClient::new(e, &e.register(LendFactory, ()));
+    factory.initialize(&admin, usdc, &oracle_addr, &signer, &wasm_hash);
+    factory
+}
+
+/// `get_amount_in` answers "how much USDC must move to buy N shares", so its
+/// result is in the token's base units — not the 6-decimal pricing space.
+/// Spelled out in whole units: one whole share priced at 1 EUR, with EUR/USD =
+/// 1.1, costs 1.1 USDC. On the 7-decimal SAC that is 11_000_000 base units; on
+/// a 6-decimal token, 1_100_000. Both are the same 1.1 USDC.
+#[test]
+fn test_amount_in_is_denominated_in_usdc_base_units() {
+    /// Shares are 6-decimal, so one whole share is 1e6 base units.
+    const ONE_SHARE: i128 = 1_000_000;
+
+    let s = setup();
+    let (id, _) = create_op(&s, 1_000 * ONE_SHARE);
+    assert_eq!(
+        soroban_sdk::token::Client::new(&s.e, &s.usdc_addr).decimals(),
+        7
+    );
+    assert_eq!(s.factory.get_amount_in(&id, &ONE_SHARE), 11_000_000);
+    assert_eq!(s.factory.get_amount_out(&id, &11_000_000), ONE_SHARE);
+
+    let e = Env::default();
+    e.mock_all_auths();
+    e.ledger().set_timestamp(1_000_000);
+    let factory = factory_with_usdc(&e, &e.register(MockToken6, ()));
+    factory.create_operation(
+        &String::from_str(&e, "Alpha"),
+        &(1_000 * ONE_SHARE),
+        &EUR_PER_SHARE,
+    );
+    assert_eq!(factory.get_amount_in(&1, &ONE_SHARE), 1_100_000);
+    assert_eq!(factory.get_amount_out(&1, &1_100_000), ONE_SHARE);
+}
+
+/// The USDC leg is denominated in the token's own decimals. Circle's USDC is a
+/// classic asset behind a SAC and reports 7, which both mainnet and (since the
+/// DummyUSDC redeploy) testnet run on — but the factory must price off whatever
+/// its token declares, not a constant. Same price, same shares, two token
+/// scales, amounts an order of magnitude apart: hardcoding 1e6 would have
+/// underpaid every 7-decimal invest by 10x.
+#[test]
+fn test_amount_in_follows_usdc_decimals() {
+    let s = setup();
+    let usdc = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    assert_eq!(usdc.decimals(), 7);
+    let (id, _) = create_op(&s, 1000);
+    assert_eq!(s.factory.get_amount_in(&id, &100), 1100);
+
+    // Same price and shares against a 6-decimal token: 10x smaller number, same
+    // real amount.
+    let e = Env::default();
+    e.mock_all_auths();
+    e.ledger().set_timestamp(1_000_000);
+    let factory = factory_with_usdc(&e, &e.register(MockToken6, ()));
+    factory.create_operation(
+        &String::from_str(&e, "Alpha"),
+        &1000,
+        &EUR_PER_SHARE,
+    );
+    assert_eq!(factory.get_amount_in(&1, &100), 110);
 }
 
 #[test]
@@ -149,15 +236,15 @@ fn test_invest_happy_path() {
     s.factory.invest(&user, &id, &100, &nonce, &sig);
 
     assert_eq!(s.factory.funding_progress(&id), 100);
-    assert_eq!(s.factory.usdc_raised(&id), 110);
-    assert_eq!(s.factory.usdc_raised_per_client(&id, &user), 110);
+    assert_eq!(s.factory.usdc_raised(&id), 1100);
+    assert_eq!(s.factory.usdc_raised_per_client(&id, &user), 1100);
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     assert_eq!(op_token.balance(&user), 100);
-    // user paid 110 USDC
+    // user paid 1100 base units = 110.0 USDC at six decimals
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
-    assert_eq!(usdc_tok.balance(&user), 9_890);
-    assert_eq!(usdc_tok.balance(&s.factory_id), 110);
+    assert_eq!(usdc_tok.balance(&user), 8_900);
+    assert_eq!(usdc_tok.balance(&s.factory_id), 1100);
 }
 
 #[test]
@@ -286,7 +373,7 @@ fn test_withdraw_usdc_after_finish() {
     let dest = Address::generate(&s.e);
     s.factory.withdraw_usdc(&id, &dest);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
-    assert_eq!(usdc_tok.balance(&dest), 110);
+    assert_eq!(usdc_tok.balance(&dest), 1100);
     assert!(s.factory.usdc_withdrawn(&id));
 }
 
@@ -334,7 +421,9 @@ fn test_batch_refund_accumulates_across_users() {
         s.factory.invest(user, &id, &shares, &nonce, &sig);
     }
     assert_eq!(s.factory.funding_progress(&id), 201);
-    assert_eq!(s.factory.usdc_raised(&id), 221); // 110 + 111
+    // 1100 + 1111: scaling before the divide keeps the 7th decimal that the
+    // old 1e6-only math truncated away.
+    assert_eq!(s.factory.usdc_raised(&id), 2211);
 
     let batch = soroban_sdk::vec![&s.e, users[0].clone(), users[1].clone()];
     s.factory.batch_refund_users(&id, &batch, &2);

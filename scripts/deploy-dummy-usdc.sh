@@ -13,7 +13,9 @@
 #
 # Optional env vars:
 #   ADMIN      Contract admin/minter (default: address of SOURCE).
-#   DECIMAL    Token decimals (default: 6, matching USDC).
+#   DECIMAL    Token decimals (default: 7). Mainnet Circle
+#              USDC is a classic asset behind a SAC and reports 7, and the
+#              factory reads whichever value its USDC token declares.
 #   NAME       Token name (default: "Dummy USD Coin").
 #   SYMBOL     Token symbol (default: "dUSDC").
 #
@@ -30,7 +32,7 @@ DUMMY_USDC_WASM="$WASM_DIR/dummy_usdc.wasm"
 req SOURCE
 
 ADMIN="${ADMIN:-$(source_address)}"
-DECIMAL="${DECIMAL:-6}"
+DECIMAL="${DECIMAL:-7}"
 NAME="${NAME:-Dummy USD Coin}"
 SYMBOL="${SYMBOL:-dUSDC}"
 

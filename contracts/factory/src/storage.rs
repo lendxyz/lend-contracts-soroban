@@ -40,6 +40,26 @@ pub fn read_usdc(e: &Env) -> Address {
     }
 }
 
+/// Stores the USDC token and caches its `decimals()`, so the pricing path does
+/// not pay a cross-contract call per invest.
+pub fn set_usdc(e: &Env, usdc: &Address) {
+    let decimals = token::Client::new(e, usdc).decimals();
+    let instance = e.storage().instance();
+    instance.set(&DataKey::Usdc, usdc);
+    instance.set(&DataKey::UsdcDecimals, &decimals);
+}
+
+/// Cached USDC decimals. Circle's USDC is a classic Stellar asset wrapped in a
+/// SAC, so on mainnet it reports 7; the testnet DummyUSDC is deployed with 6.
+/// Contracts initialized before this key existed fall back to the 6 they were
+/// priced against.
+pub fn usdc_decimals(e: &Env) -> u32 {
+    e.storage()
+        .instance()
+        .get(&DataKey::UsdcDecimals)
+        .unwrap_or(6)
+}
+
 pub fn usdc_client(e: &Env) -> token::Client<'_> {
     token::Client::new(e, &read_usdc(e))
 }

@@ -4,6 +4,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::Error;
+use crate::storage as st;
 use crate::types::DataKey;
 
 pub const PRICE_PRECISION: i128 = 1_000_000; // 1e6
@@ -77,13 +78,25 @@ fn scale_to_6(price: i128, decimals: u32) -> i128 {
     }
 }
 
-/// USDC cost for `shares_amount` shares of operation priced at `eur_per_shares`.
+/// Scale of one whole USDC in the token's own base units. Internal pricing is
+/// 6-decimal throughout (`eur_per_shares`, the oracle price, shares); only the
+/// leg that actually moves tokens is denominated in the token's decimals.
+fn usdc_precision(e: &Env) -> i128 {
+    10i128.pow(st::usdc_decimals(e))
+}
+
+/// USDC cost for `shares_amount` shares of operation priced at `eur_per_shares`,
+/// in USDC base units.
 pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
     if shares_amount <= 0 {
         panic_with_error!(e, Error::InvalidShares);
     }
     let shares_price_eur = eur_per_shares * shares_amount / PRICE_PRECISION;
-    let usdc_cost = shares_price_eur * get_eur_usd_price(e) / PRICE_PRECISION;
+    // 6-decimal EUR * 6-decimal USD/EUR = 12 decimals. Rescaling straight into
+    // the token's precision in one divide keeps every digit a 7-decimal USDC can
+    // hold, instead of rounding to 1e-6 first and multiplying the loss back up.
+    let usdc_cost = shares_price_eur * get_eur_usd_price(e) * usdc_precision(e)
+        / (PRICE_PRECISION * PRICE_PRECISION);
     if usdc_cost <= 0 {
         1
     } else {
@@ -91,13 +104,15 @@ pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
     }
 }
 
-/// Shares obtainable for `usdc_amount` at `eur_per_shares`.
+/// Shares obtainable for `usdc_amount` USDC base units at `eur_per_shares`.
 pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
     if usdc_amount <= 0 {
         panic_with_error!(e, Error::InvalidAmount);
     }
+    // Token base units -> 6-decimal USDC, before the 6-decimal share math.
+    let usdc_6 = usdc_amount * PRICE_PRECISION / usdc_precision(e);
     let shares =
-        usdc_amount * SHARE_PRECISION / (eur_per_shares * get_eur_usd_price(e));
+        usdc_6 * SHARE_PRECISION / (eur_per_shares * get_eur_usd_price(e));
     if shares <= 0 {
         1
     } else {

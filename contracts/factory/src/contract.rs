@@ -25,10 +25,10 @@ impl LendFactory {
         }
 
         instance.set(&DataKey::Admin, &admin);
-        instance.set(&DataKey::Usdc, &usdc);
         instance.set(&DataKey::BackendSigner, &backend_signer);
         instance.set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
-        // Also caches the oracle's `decimals()`. `OperationCount` defaults to 0.
+
+        st::set_usdc(&env, &usdc);
         oracle::set_oracle(&env, &oracle);
         st::bump_instance(&env);
     }
