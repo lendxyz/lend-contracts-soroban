@@ -60,28 +60,35 @@ case "$NETWORK" in
   mainnet | pubnet | public)
     NETWORK=mainnet
 
-    # Ledger signing. LEDGER_HD_PATH is the only knob: it picks both the account
-    # (SOURCE=ledger:<index>, resolved off the device) and the signing key
-    # (--hd-path), so the two can never drift apart. The device has to be
-    # plugged in and unlocked with the Stellar app open.
+    # Ledger signing. Register the device once as a named identity — that stores
+    # the derived public key, the hd path and the fact that it is ledger-backed,
+    # so later runs resolve the address without the device and signing routes to
+    # it automatically:
     #
-    # Freighter's default account is m/44'/148'/0' -> index 0. To find the index
-    # of an address Freighter already shows you, match it in this list:
-    #   for i in 0 1 2 3 4; do echo "$i $(stellar keys public-key ledger:$i)"; done
-    # (Freighter's "Ledger N" account *name* is not the index.)
-    : "${LEDGER_HD_PATH:=0}"
-    : "${SOURCE:=ledger:$LEDGER_HD_PATH}"
+    #   stellar keys add lend-mainnet --ledger --hd-path 0
+    #
+    # Needs stellar-cli >= 26.1.0 (guarded below). The hd path belongs to the
+    # identity from then on: passing --hd-path to a signing call is an error, and
+    # there is no LEDGER_HD_PATH knob here. To move to another index, re-register:
+    #
+    #   stellar keys add lend-mainnet --ledger --hd-path 3 --overwrite
+    #
+    # Freighter's default account is m/44'/148'/0' -> --hd-path 0. To find the
+    # index of an address Freighter already shows you, match it in this list
+    # (device unlocked, Stellar app open) — its "Ledger N" account *name* is not
+    # the index:
+    #
+    #   for i in 0 1 2 3 4; do echo "$i $(stellar keys address --ledger --hd-path $i)"; done
+    #
+    # Do NOT use a `ledger:N` source spec: 26.0.0 accepted it for reads but
+    # cannot sign with it, and 27.x rejects it outright as an invalid name.
+    : "${SOURCE:=lend-mainnet}"
     : "${SIGN_WITH_LEDGER:=1}"
-    # To resolve the address without the device, park it in an identity instead
-    # and keep LEDGER_HD_PATH pointing at that same index:
-    #   stellar keys add lend-mainnet --public-key "$(stellar keys public-key ledger:0)"
-    #   SOURCE=lend-mainnet ./scripts/...
 
-    # TODO: fill in after the mainnet deploy; also record in DEPLOYMENTS.md.
-    : "${FACTORY_ID:=}"
-    : "${REWARDS_ID:=}"
+    : "${FACTORY_ID:=CBJ6ECNXWX3JEIDV35KL3LB3AS4BOO23E5I4AHWNTPLEMEVAHBV4WBYM}"
+    : "${REWARDS_ID:=CCSA4PQNTOZXJTFHHLBLBVU2YLNJMIFBKQAGE4IDGNJBHRRXDXO7QKN6}"
 
-    # Circle USDC SAC + Reflector FX oracle. Verified 2026-06-02.
+    # Circle USDC SAC + Reflector FX oracle. Verified on 10th Aug. 2026.
     : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
     : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
@@ -108,15 +115,45 @@ esac
 }
 NETWORK_ARGS=(--rpc-url "$RPC_URL" --network-passphrase "$NETWORK_PASSPHRASE")
 
-# Signing flags spliced into every stellar call as "${SIGN_ARGS[@]}". Empty
-# means "sign locally with the key behind $SOURCE"; with a ledger the device
-# must be plugged in, unlocked, running the Stellar app, and each transaction
-# has to be approved on-device.
-LEDGER_HD_PATH="${LEDGER_HD_PATH:-0}"
+# Inclusion-fee bid, in stroops. The CLI defaults to 100, which loses the race
+# whenever mainnet is above that (`stellar fees stats` reported a 200 max while
+# an upload was timing out), and a Soroban submission that never gets included
+# surfaces as "transaction submission timeout" — signed, sent, never in a ledger.
+# This is only a cap: you pay the clearing price, and 0.01 XLM of headroom is
+# noise next to a multi-XLM resource fee. Exported so every stellar call picks it
+# up without threading a flag through 16 call sites.
+: "${INCLUSION_FEE:=$([ "$NETWORK" = mainnet ] && echo 100000 || echo 1000)}"
+export STELLAR_INCLUSION_FEE="$INCLUSION_FEE"
+
+# Signing flags spliced into every stellar call as "${SIGN_ARGS[@]}". Empty means
+# "sign locally with the key behind $SOURCE"; with a ledger the device must be
+# plugged in, unlocked, running the Stellar app, and every transaction approved
+# on it.
 SIGN_ARGS=()
 if [ "$SIGN_WITH_LEDGER" = "1" ]; then
-  SIGN_ARGS=(--sign-with-ledger --hd-path "$LEDGER_HD_PATH")
-  echo "==> Signing with Ledger (hd path $LEDGER_HD_PATH). Please approve on your device" >&2
+  # Signing Soroban auth entries from a device landed in stellar-cli 26.1.0
+  # (#2569). Before that, the contract subcommands ask $SOURCE for a secret and
+  # die with "Ledger cannot reveal private keys" (or "Address cannot be used to
+  # sign" for a plain G...), no matter what --sign-with-* says — that path only
+  # covers `tx sign`, not the auth entries every contract call carries.
+  CLI_VERSION="$(stellar --version 2>/dev/null | head -1 | awk '{print $2}')"
+  if [ "$(printf '%s\n26.1.0\n' "$CLI_VERSION" | sort -V | head -1)" != "26.1.0" ]
+  then
+    echo "error: stellar-cli $CLI_VERSION cannot sign contract calls with a Ledger." >&2
+    echo "       Upgrade to >= 26.1.0, then register the device once:" >&2
+    echo "         stellar keys add $SOURCE --ledger --hd-path 0" >&2
+    exit 1
+  fi
+  # No --hd-path: the identity owns it, and passing it here is rejected with
+  # "--hd-path is fixed at the time a Ledger identity is added".
+  SIGN_ARGS=(--sign-with-ledger)
+  if [ -n "${LEDGER_HD_PATH:-}" ]; then
+    echo "error: LEDGER_HD_PATH=$LEDGER_HD_PATH has no effect; the path is baked into" >&2
+    echo "       the '$SOURCE' identity. Re-register to change it:" >&2
+    echo "         stellar keys add $SOURCE --ledger --hd-path $LEDGER_HD_PATH --overwrite" >&2
+    exit 1
+  fi
+  echo "==> Signing with Ledger via '$SOURCE'. Please approve on your device" >&2
 fi
 
 # req VAR... — abort unless every named variable is set and non-empty.
