@@ -26,7 +26,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WASM_DIR="$REPO_ROOT/target/wasm32v1-none/release"
 
-NETWORK="${NETWORK:-mainnet}"
+NETWORK="${NETWORK:-testnet}"
 
 case "$NETWORK" in
   # ---------------------------------------------------------------- testnet --
