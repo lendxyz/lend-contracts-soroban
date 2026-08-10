@@ -10,42 +10,35 @@
 #   5. POST /users/signatures/mint-proof (Bearer JWT) for the proof + nonce
 #   6. forward the returned nonce + signature to invest.sh
 #
+# Network, signer, FACTORY_ID and API_BASE come from scripts/common.sh; override
+# anything in the env.
+#
 # Required env vars:
-#   SOURCE          Stellar CLI identity of the investor (signs tx + pays USDC,
-#                   logs into the API, and whose address is the user address).
 #   OP_ID           Operation id (integer). Sent as "op_id"; forwarded to invest.
 #   AMOUNT          Shares to buy (integer, 6 decimals). Sent as "amount";
 #                   forwarded to invest.sh as SHARES.
 #
 # Optional env vars:
-#   NETWORK         Network name (default: testnet). Forwarded to invest.sh.
-#   FACTORY_ID      Factory contract address (C...). Forwarded to invest.sh and,
-#                   if set, sent to the API as "contract_id".
-#   INVESTOR        Investor address (G...); defaults to `stellar keys address $SOURCE`.
-#   API_BASE        API v1 root
-#                   (default: https://lend-api-testnet-stellar.up.railway.app/v1).
+#   INVESTOR        Investor address (G...); defaults to the address of SOURCE.
 #   JWT             Pre-obtained JWT; skips the /auth/message + /auth/verify flow.
 #   INTERNAL_TOKEN  Value for the X-Internal-Token header (NuxtAuth; only needed
 #                   off testnet, where that middleware is bypassed).
+#
+# The API login signs a message with SOURCE's secret key, so SOURCE has to be a
+# local identity: a Ledger account cannot export one, pass JWT=... instead.
 #
 # Usage:
 #   SOURCE=alice OP_ID=1 AMOUNT=1000000000 ./scripts/invest-with-proof.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-API_BASE="${API_BASE:-https://lend-api-testnet-stellar.up.railway.app/v1}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req OP_ID
-req AMOUNT
+req SOURCE OP_ID AMOUNT API_BASE
+need_bin jq curl node stellar
 
-for bin in jq curl node; do
-  command -v "$bin" >/dev/null || { echo "error: $bin is required" >&2; exit 1; }
-done
-
-INVESTOR="${INVESTOR:-$(stellar keys address "$SOURCE")}"
+INVESTOR="${INVESTOR:-$(source_address)}"
 
 # Common headers. NuxtAuthMiddleware is bypassed on testnet, but allow passing
 # the internal token for non-testnet deployments.
@@ -65,6 +58,12 @@ api_post() {
   fi
   printf '%s' "$body"
 }
+
+if [ -z "${JWT:-}" ] && [ "$SIGN_WITH_LEDGER" = "1" ]; then
+  echo "error: the API login needs SOURCE's secret key and a Ledger cannot export one." >&2
+  echo "       Pass JWT=... instead, or run with a local identity." >&2
+  exit 1
+fi
 
 if [ -z "${JWT:-}" ]; then
   # 1. Request the sign-in message for the investor address.
@@ -133,7 +132,6 @@ fi
 
 echo "==> Got signature + nonce; investing..." >&2
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 env \
   SOURCE="$SOURCE" \
   NETWORK="$NETWORK" \

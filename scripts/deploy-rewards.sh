@@ -3,40 +3,30 @@
 # Deploy the LendRewards (merkle reward distribution) contract.
 #
 # Builds the wasm and deploys it with its constructor (admin + reward token).
-# The reward token is USDC; it defaults to the network's Circle USDC SAC.
 #
-# Required env vars:
-#   SOURCE        Stellar CLI identity used to sign + pay.
+# Network, signer and USDC come from scripts/common.sh; override in the env.
 #
 # Optional env vars:
-#   NETWORK       testnet | mainnet (default: testnet).
-#   REWARD_TOKEN  Reward token contract; defaults to the network's USDC.
+#   REWARD_TOKEN  Reward token contract (default: the network's USDC).
 #   ADMIN         Contract admin/owner (default: address of SOURCE).
 #
 # Usage:
-#   SOURCE=alice ./scripts/deploy-rewards.sh
+#   ./scripts/deploy-rewards.sh                   # testnet
+#   NETWORK=mainnet ./scripts/deploy-rewards.sh   # mainnet, signs on the Ledger
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-REWARDS_WASM="$REPO_ROOT/target/wasm32v1-none/release/lend_rewards.wasm"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
+REWARDS_WASM="$WASM_DIR/lend_rewards.wasm"
 
-# Verified 2026-06-02 (Circle USDC SAC). Same addresses as deploy.sh.
-case "$NETWORK" in
-  testnet)
-    : "${REWARD_TOKEN:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
-    ;;
-  mainnet|pubnet|public)
-    : "${REWARD_TOKEN:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
-    ;;
-esac
-req REWARD_TOKEN
+# LendRewards pays out in USDC (DummyUSDC on testnet).
+REWARD_TOKEN="${REWARD_TOKEN:-$USDC}"
 
-ADMIN="${ADMIN:-$(stellar keys address "$SOURCE")}"
+req SOURCE REWARD_TOKEN
+
+ADMIN="${ADMIN:-$(source_address)}"
 
 echo "==> Network:      $NETWORK"
 echo "==> Source:       $SOURCE"
@@ -51,6 +41,7 @@ REWARDS_ID="$(stellar contract deploy \
   --wasm "$REWARDS_WASM" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- \
   --admin "$ADMIN" \
   --reward_token "$REWARD_TOKEN" | tail -n1)"
@@ -58,3 +49,4 @@ REWARDS_ID="$(stellar contract deploy \
 echo ""
 echo "==> Done."
 echo "    REWARDS_ID=$REWARDS_ID"
+echo "    # record it in DEPLOYMENTS.md and in scripts/common.sh"

@@ -377,8 +377,9 @@ cargo llvm-cov --workspace       # line/region coverage report
 
 ## Deploying
 
-Deployment is scripted under [`scripts/`](scripts/README.md) and wrapped by the
-Makefile (testnet defaults shown in the [`Makefile`](Makefile)):
+Deployment is scripted under [`scripts/`](scripts/) and wrapped by the Makefile.
+Network, signer and contract addresses live in one place,
+[`scripts/common.sh`](scripts/common.sh), which every script sources:
 
 ```sh
 make deploy-factory
@@ -387,10 +388,15 @@ make deploy-dummy-usdc
 make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 make start-operation OP_ID=0
 make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
+
+# mainnet uses the same targets and signs on a Ledger
+# (plug it in, unlock it, open the Stellar app, approve each transaction)
+make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 ```
 
-Current testnet addresses are tracked in [`DEPLOYMENTS.md`](DEPLOYMENTS.md). See
-[`scripts/README.md`](scripts/README.md) for the full variable list per script.
+Deployed addresses are tracked in [`DEPLOYMENTS.md`](DEPLOYMENTS.md) and in
+[`scripts/common.sh`](scripts/common.sh); each script's header documents the
+extra variables it needs.
 
 ## Project structure
 
@@ -400,7 +406,7 @@ contracts/
   op-lend/      OpLendToken — SEP-41 token with transfer restrictions + cap
   rewards/      LendRewards — merkle-based reward distribution
   dummy-usdc/   DummyUSDC   — testnet-only open-mint USDC stand-in
-scripts/        deploy + interaction scripts (see scripts/README.md)
+scripts/        deploy + interaction scripts (shared config: common.sh)
 Makefile        build / test / deploy targets
 DEPLOYMENTS.md  deployed contract addresses
 ```

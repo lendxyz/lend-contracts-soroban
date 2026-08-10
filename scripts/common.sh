@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+#
+# Shared configuration for every script in scripts/. Sourced, never executed:
+#
+#   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+#   source "$SCRIPT_DIR/common.sh"
+#
+# Picks a profile from $NETWORK (default: testnet) and fills in the contract
+# addresses, the signing identity and the signing method for that network.
+# Every value is assigned with `: "${VAR:=default}"`, so the environment always
+# wins and one-off overrides keep working:
+#
+#   NETWORK=mainnet ./scripts/create-operation.sh
+#   FACTORY_ID=C... ./scripts/start-operation.sh
+#
+# Mainnet signs with a Ledger hardware wallet (see the mainnet profile below):
+# $SOURCE is only the *address* of the ledger account and every stellar call
+# carries "${SIGN_ARGS[@]}", which routes signing to the device.
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  echo "error: common.sh is a config file; source it, don't run it" >&2
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+WASM_DIR="$REPO_ROOT/target/wasm32v1-none/release"
+
+NETWORK="${NETWORK:-testnet}"
+
+case "$NETWORK" in
+  # ---------------------------------------------------------------- testnet --
+  testnet)
+    # Local key from `stellar keys ls`; signs and pays.
+    : "${SOURCE:=lend-testnet}"
+    : "${SIGN_WITH_LEDGER:=0}"
+
+    # Deployments — keep in sync with DEPLOYMENTS.md.
+    : "${FACTORY_ID:=CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD}"
+    : "${REWARDS_ID:=CASVCVOAEAQCH5M3SYLCKKD3LRPA4JO2776EIKJQ2FJOF4KFONG223YW}"
+    : "${DUMMY_USDC_ID:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
+
+    # DummyUSDC stands in for Circle USDC on testnet.
+    : "${USDC:=$DUMMY_USDC_ID}"
+    # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
+    # EUR). Verified 2026-06-02 on-chain.
+    : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
+    # Backend ed25519 key that authorizes invest / predeposit / fiat-invest.
+    : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
+
+    : "${RPC_URL:=https://soroban-testnet.stellar.org}"
+    : "${API_BASE:=https://api-staging.lend.xyz/v1}"
+    ;;
+
+  # ---------------------------------------------------------------- mainnet --
+  mainnet | pubnet | public)
+    NETWORK=mainnet
+
+    # Ledger signing. `stellar keys` has no ledger-backed identity, so the CLI
+    # cannot derive the address from the device: $SOURCE must be the account
+    # itself. Either paste the G... here, or alias it once with
+    #   stellar keys add lend-mainnet --public-key G...
+    # and set SOURCE=lend-mainnet.
+    : "${SOURCE:=}" # TODO: mainnet signer address (G...)
+    : "${SIGN_WITH_LEDGER:=1}"
+    # Derivation path index, m/44'/148'/<LEDGER_HD_PATH>'.
+    : "${LEDGER_HD_PATH:=0}"
+
+    # TODO: fill in after the mainnet deploy; also record in DEPLOYMENTS.md.
+    : "${FACTORY_ID:=}"
+    : "${REWARDS_ID:=}"
+
+    # Circle USDC SAC + Reflector FX oracle. Verified 2026-06-02.
+    : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
+    : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
+    : "${BACKEND_SIGNER:=}" # TODO: production backend signer (G... or 64 hex)
+
+    : "${RPC_URL:=https://mainnet.sorobanrpc.com}"
+    : "${API_BASE:=https://api.lend.xyz/v1}"
+    ;;
+
+  *)
+    echo "error: unknown NETWORK '$NETWORK' (expected testnet | mainnet)" >&2
+    exit 1
+    ;;
+esac
+
+# Signing flags spliced into every stellar call as "${SIGN_ARGS[@]}". Empty
+# means "sign locally with the key behind $SOURCE"; with a ledger the device
+# must be plugged in, unlocked, running the Stellar app, and each transaction
+# has to be approved on-device.
+LEDGER_HD_PATH="${LEDGER_HD_PATH:-0}"
+SIGN_ARGS=()
+if [ "$SIGN_WITH_LEDGER" = "1" ]; then
+  SIGN_ARGS=(--sign-with-ledger --hd-path "$LEDGER_HD_PATH")
+  echo "==> Signing with Ledger (hd path $LEDGER_HD_PATH). Please approve on your device" >&2
+fi
+
+# req VAR... — abort unless every named variable is set and non-empty.
+req() {
+  local v
+  for v in "$@"; do
+    [ -n "${!v:-}" ] || {
+      echo "error: \$$v is required (NETWORK=$NETWORK); set it in the env or in scripts/common.sh" >&2
+      exit 1
+    }
+  done
+}
+
+# need_bin BIN... — abort unless every binary is on PATH.
+need_bin() {
+  local b
+  for b in "$@"; do
+    command -v "$b" >/dev/null || { echo "error: $b is required" >&2; exit 1; }
+  done
+}
+
+# source_address — the G... address $SOURCE signs with. $SOURCE is a named CLI
+# identity on testnet but a bare address in the ledger setup, so resolve both.
+source_address() {
+  case "$SOURCE" in
+    G*) printf '%s' "$SOURCE" ;;
+    *) stellar keys address "$SOURCE" ;;
+  esac
+}
+
+# strkey_to_hex <G...|64 hex> — raw 32-byte ed25519 pubkey as 64 hex chars,
+# which is what the CLI wants for BytesN<32> args. A G... strkey is
+# version byte + 32-byte payload + 2-byte crc; hex input passes through.
+strkey_to_hex() {
+  case "$1" in
+    G*)
+      need_bin python3
+      python3 - "$1" <<'PY'
+import base64, sys
+s = sys.argv[1]
+raw = base64.b32decode(s + "=" * ((8 - len(s) % 8) % 8))
+sys.stdout.write(raw[1:33].hex())
+PY
+      ;;
+    *) printf '%s' "${1#0x}" ;;
+  esac
+}

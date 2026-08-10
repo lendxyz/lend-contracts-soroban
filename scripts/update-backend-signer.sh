@@ -4,53 +4,32 @@
 # predeposit / fiat-invest messages). Admin-only (SOURCE must be the factory
 # admin).
 #
-# Required env vars:
-#   SOURCE          Stellar CLI identity (must be the factory admin).
-#   FACTORY_ID      Deployed factory contract address (C...).
-#   BACKEND_SIGNER  New backend ed25519 public key: 64 hex chars or a G... strkey.
+# Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
 #
-# Optional env vars:
-#   NETWORK         Network name (default: testnet).
+# Required env vars:
+#   BACKEND_SIGNER  New backend ed25519 public key: 64 hex chars or a G... strkey
+#                   (defaults to the network's BACKEND_SIGNER in common.sh).
 #
 # Usage:
-#   SOURCE=alice BACKEND_SIGNER=GAOQ67SJ... ./scripts/update-backend-signer.sh
+#   BACKEND_SIGNER=GAOQ67SJ... ./scripts/update-backend-signer.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-case "$NETWORK" in
-  testnet)
-    : "${FACTORY_ID:=CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD}"
-    ;;
-  # TODO: change this when mainnet
-  mainnet|pubnet|public)
-    : "${FACTORY_ID:=CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF}"
-    ;;
-esac
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req FACTORY_ID
-req BACKEND_SIGNER
+req SOURCE FACTORY_ID BACKEND_SIGNER
 
-# new_signer is BytesN<32>, so the CLI needs 64 hex chars. Accept a G... strkey
-# for convenience and decode it to the raw 32-byte ed25519 pubkey
-# (strkey = version byte + 32-byte payload + 2-byte crc).
-if [[ "$BACKEND_SIGNER" == G* ]]; then
-  BACKEND_SIGNER="$(python3 - "$BACKEND_SIGNER" <<'PY'
-import base64, sys
-s = sys.argv[1]
-raw = base64.b32decode(s + "=" * ((8 - len(s) % 8) % 8))
-sys.stdout.write(raw[1:33].hex())
-PY
-)"
-fi
+# new_signer is BytesN<32>, so the CLI needs 64 hex chars; a G... strkey is
+# decoded for convenience.
+BACKEND_SIGNER="$(strkey_to_hex "$BACKEND_SIGNER")"
 
 echo "==> Updating backend signer on $FACTORY_ID ($NETWORK) to $BACKEND_SIGNER..."
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- update_backend_signer \
   --new_signer "$BACKEND_SIGNER"
 

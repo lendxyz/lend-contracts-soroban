@@ -3,35 +3,28 @@
 # Fund an address with DummyUSDC. `mint` is open to anyone, so any SOURCE
 # identity can top up any address on testnet.
 #
+# Network, signer and DUMMY_USDC_ID come from scripts/common.sh (testnet only —
+# there is no DummyUSDC on mainnet); override in the env.
+#
 # Required env vars:
-#   SOURCE         Stellar CLI identity (signs the tx).
 #   TO             Address to fund (G...).
 #
 # Optional env vars:
-#   NETWORK        Network name (default: testnet).
-#   DUMMY_USDC_ID  Deployed DummyUSDC contract address (C...); defaults per NETWORK.
 #   AMOUNT_WHOLE   Whole tokens to mint (default: 10000); scaled by DECIMAL.
 #   DECIMAL        Token decimals (default: 6).
 #
 # Usage:
-#   SOURCE=alice DUMMY_USDC_ID=CC... TO=G... AMOUNT_WHOLE=5000 ./scripts/fund-dummy-usdc.sh
+#   TO=G... AMOUNT_WHOLE=5000 ./scripts/fund-dummy-usdc.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
+
 DECIMAL="${DECIMAL:-6}"
 AMOUNT_WHOLE="${AMOUNT_WHOLE:-10000}"
 
-case "$NETWORK" in
-  testnet)
-    : "${DUMMY_USDC_ID:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
-    ;;
-esac
-
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req DUMMY_USDC_ID
-req TO
+req SOURCE DUMMY_USDC_ID TO
 
 AMOUNT="${AMOUNT_WHOLE}$(printf '0%.0s' $(seq 1 "$DECIMAL"))"
 
@@ -40,6 +33,7 @@ stellar contract invoke \
   --id "$DUMMY_USDC_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- mint \
   --to "$TO" \
   --amount "$AMOUNT"

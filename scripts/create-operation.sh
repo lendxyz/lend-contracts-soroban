@@ -3,44 +3,29 @@
 # Create an operation on a deployed factory. Deploys a fresh op-lend token and
 # registers it. Admin-only (SOURCE must be the factory admin).
 #
+# Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
+#
 # Required env vars:
-#   SOURCE          Stellar CLI identity (must be the factory admin).
-#   FACTORY_ID      Deployed factory contract address (C...).
 #   OP_NAME         Human name, e.g. "Alpha Fund".
 #   TOTAL_SHARES    Max shares / supply cap (integer, 6 decimals).
 #   EUR_PER_SHARES  Price per share in EUR (integer, 6 decimals; 1 EUR = 1000000).
 #
-# Optional env vars:
-#   NETWORK         Network name (default: testnet).
-#
 # Usage:
-#   SOURCE=alice OP_NAME="Alpha" TOTAL_SHARES=1000000 \ EUR_PER_SHARES=1000000 ./scripts/create-operation.sh
+#   OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000 ./scripts/create-operation.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-case "$NETWORK" in
-  testnet)
-    : "${FACTORY_ID:=CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD}"
-    ;;
-  # TODO: change this when mainnet
-  mainnet|pubnet|public)
-    : "${FACTORY_ID:=CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF}"
-    ;;
-esac
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req FACTORY_ID
-req OP_NAME
-req TOTAL_SHARES
-req EUR_PER_SHARES
+req SOURCE FACTORY_ID OP_NAME TOTAL_SHARES EUR_PER_SHARES
 
 echo "==> Creating operation '$OP_NAME' on $FACTORY_ID ($NETWORK)..."
 OP_TOKEN="$(stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- create_operation \
   --op_name "$OP_NAME" \
   --total_shares "$TOTAL_SHARES" \

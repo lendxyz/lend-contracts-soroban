@@ -5,63 +5,31 @@
 # Builds the wasms, uploads the op-lend wasm (factory deploys op-lend instances
 # from its hash), deploys the factory, then calls `initialize`.
 #
-# Required env vars:
-#   SOURCE          Stellar CLI identity (see `stellar keys ls`) used to sign + pay.
-#   USDC            USDC token contract address (C...).
-#   ORACLE          Reflector (SEP-40) oracle contract address (C...).
-#   BACKEND_SIGNER  Backend ed25519 public key: 64 hex chars or a G... strkey
-#                   (auto-decoded to hex).
+# Network, signer and addresses come from scripts/common.sh (NETWORK, SOURCE,
+# USDC, ORACLE, BACKEND_SIGNER, SIGN_ARGS); override any of them in the env.
 #
-# Optional env vars (sensible per-network defaults applied if unset):
-#   NETWORK         Network name: testnet | mainnet (default: testnet).
-#   USDC            USDC SAC; defaults to the network's Circle USDC.
-#   ORACLE          Reflector FX oracle; defaults to the network's FX feed.
+# Optional env vars:
 #   ADMIN           Factory admin address (default: address of SOURCE).
 #
-# Usage (testnet, defaults for USDC + oracle):
-#   SOURCE=alice BACKEND_SIGNER=ab12... ./scripts/deploy.sh
+# Usage:
+#   ./scripts/deploy-factory.sh                   # testnet
+#   NETWORK=mainnet ./scripts/deploy-factory.sh   # mainnet, signs on the Ledger
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-# Verified 2026-06-02 (on-chain + Circle/Stellar docs). See scripts/README.md.
-# Reflector FX oracle = the fiat/forex feed (base USD, decimals 14, carries EUR).
-case "$NETWORK" in
-  testnet)
-    : "${USDC:=CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN}"
-    : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
-    ;;
-  mainnet|pubnet|public)
-    : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
-    : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
-    ;;
-esac
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RELEASE_DIR="$REPO_ROOT/target/wasm32v1-none/release"
-OPLEND_WASM="$RELEASE_DIR/lend_operation_token.wasm"
-FACTORY_WASM="$RELEASE_DIR/lend_factory.wasm"
+OPLEND_WASM="$WASM_DIR/lend_operation_token.wasm"
+FACTORY_WASM="$WASM_DIR/lend_factory.wasm"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req USDC
-req ORACLE
-req BACKEND_SIGNER
+req SOURCE USDC ORACLE BACKEND_SIGNER
 
 # The contract's backend_signer param is BytesN<32>, so the CLI needs 64 hex
-# chars. Accept a Stellar G... strkey for convenience and decode it to the raw
-# 32-byte ed25519 pubkey (strkey = version byte + 32-byte payload + 2-byte crc).
-if [[ "$BACKEND_SIGNER" == G* ]]; then
-  BACKEND_SIGNER="$(python3 - "$BACKEND_SIGNER" <<'PY'
-import base64, sys
-s = sys.argv[1]
-raw = base64.b32decode(s + "=" * ((8 - len(s) % 8) % 8))
-sys.stdout.write(raw[1:33].hex())
-PY
-)"
-fi
+# chars; a G... strkey is decoded for convenience.
+BACKEND_SIGNER="$(strkey_to_hex "$BACKEND_SIGNER")"
 
-ADMIN="${ADMIN:-$(stellar keys address "$SOURCE")}"
+ADMIN="${ADMIN:-$(source_address)}"
 
 echo "==> Network:        $NETWORK"
 echo "==> Source:         $SOURCE"
@@ -77,14 +45,16 @@ echo "==> Uploading op-lend wasm..."
 OPLEND_WASM_HASH="$(stellar contract upload \
   --wasm "$OPLEND_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" | tail -n1)"
+  --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" | tail -n1)"
 echo "    op-lend wasm hash: $OPLEND_WASM_HASH"
 
 echo "==> Deploying factory..."
 FACTORY_ID="$(stellar contract deploy \
   --wasm "$FACTORY_WASM" \
   --source "$SOURCE" \
-  --network "$NETWORK" | tail -n1)"
+  --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" | tail -n1)"
 echo "    factory id: $FACTORY_ID"
 
 echo "==> Initializing factory..."
@@ -92,6 +62,7 @@ stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- initialize \
   --admin "$ADMIN" \
   --usdc "$USDC" \
@@ -103,3 +74,4 @@ echo ""
 echo "==> Done."
 echo "    FACTORY_ID=$FACTORY_ID"
 echo "    OPLEND_WASM_HASH=$OPLEND_WASM_HASH"
+echo "    # record both in DEPLOYMENTS.md and in scripts/common.sh"

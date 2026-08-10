@@ -12,23 +12,23 @@ build:
 	stellar contract build
 	@ls -l target/wasm32v1-none/release/*.wasm
 
-# Deploy targets wrap scripts/. SOURCE + BACKEND_SIGNER default below; override
-# on the make line. Other vars (FACTORY_ID, OP_NAME, ...) pass through the env.
-# See the script header or scripts/README.md for the full var list.
+# Deploy targets wrap scripts/. Shared config (NETWORK, SOURCE, FACTORY_ID,
+# addresses, Ledger signing) lives in scripts/common.sh; per-run vars are passed
+# on the make line and reach the scripts through the environment.
 #   make deploy-factory
 #   make deploy-rewards
 #   make deploy-dummy-usdc
-# 	make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 # uses sample
-# 	make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
+# 	make distribute-op-rewards OP_ID=1 EPOCH=3                 # uses sample recipients
+# 	make distribute-op-rewards OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 #   make start-operation OP_ID=0
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
-#   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE defaults to test-user
-#   make fund-dummy-usdc DUMMY_USDC_ID=CC... TO=G... AMOUNT_WHOLE=5000
+#   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
+#   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
-SOURCE ?= lend-testnet
-BACKEND_SIGNER ?= GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA
-export SOURCE BACKEND_SIGNER
+#
+# Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
+#   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 
 deploy-factory:
 	./scripts/deploy-factory.sh
@@ -53,10 +53,10 @@ start-operation:
 invest:
 	./scripts/invest.sh
 
-# Fetches the mint proof from the API then invests. Defaults SOURCE to test-user.
-invest-with-proof: SOURCE := test-user
+# Fetches the mint proof from the API then invests. The API login needs a local
+# secret key, so this one pins its own identity instead of common.sh's.
 invest-with-proof:
-	./scripts/invest-with-proof.sh
+	SOURCE=test-user ./scripts/invest-with-proof.sh
 
 fund-dummy-usdc:
 	./scripts/fund-dummy-usdc.sh

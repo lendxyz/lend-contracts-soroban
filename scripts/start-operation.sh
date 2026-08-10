@@ -3,40 +3,27 @@
 # Start an operation on a deployed factory. Admin-only (SOURCE must be the
 # factory admin).
 #
+# Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
+#
 # Required env vars:
-#   SOURCE          Stellar CLI identity (must be the factory admin).
-#   FACTORY_ID      Deployed factory contract address (C...).
 #   OP_ID           Operation id (integer).
 #
-# Optional env vars:
-#   NETWORK         Network name (default: testnet).
-#
 # Usage:
-#   SOURCE=alice OP_ID=0 ./scripts/start-operation.sh
+#   OP_ID=0 ./scripts/start-operation.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-case "$NETWORK" in
-  testnet)
-    : "${FACTORY_ID:=CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD}"
-    ;;
-  # TODO: change this when mainnet
-  mainnet|pubnet|public)
-    : "${FACTORY_ID:=CAR5T7YSAG5WH37X7V3ASJNXLN57CLYC3BAXUF2YIJ2GOOZJ6PPOWEEF}"
-    ;;
-esac
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
-req SOURCE
-req FACTORY_ID
-req OP_ID
+req SOURCE FACTORY_ID OP_ID
 
 echo "==> Starting operation $OP_ID on $FACTORY_ID ($NETWORK)..."
 stellar contract invoke \
   --id "$FACTORY_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- start_operation \
   --id "$OP_ID"
 

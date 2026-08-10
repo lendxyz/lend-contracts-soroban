@@ -9,29 +9,27 @@
 # SOURCE identity's address (the default). Override ADMIN and the mint is
 # skipped-with-error unless that address signs.
 #
-# Required env vars:
-#   SOURCE     Stellar CLI identity used to sign + pay.
+# Network and signer come from scripts/common.sh; override in the env.
 #
 # Optional env vars:
-#   NETWORK    testnet | mainnet (default: testnet).
 #   ADMIN      Contract admin/minter (default: address of SOURCE).
 #   DECIMAL    Token decimals (default: 6, matching USDC).
 #   NAME       Token name (default: "Dummy USD Coin").
 #   SYMBOL     Token symbol (default: "dUSDC").
 #
 # Usage:
-#   SOURCE=alice ./scripts/deploy-dummy-usdc.sh
+#   ./scripts/deploy-dummy-usdc.sh
 #
 set -euo pipefail
 
-NETWORK="${NETWORK:-testnet}"
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DUMMY_USDC_WASM="$REPO_ROOT/target/wasm32v1-none/release/dummy_usdc.wasm"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/common.sh"
 
-req() { [ -n "${!1:-}" ] || { echo "error: \$$1 is required" >&2; exit 1; }; }
+DUMMY_USDC_WASM="$WASM_DIR/dummy_usdc.wasm"
+
 req SOURCE
 
-ADMIN="${ADMIN:-$(stellar keys address "$SOURCE")}"
+ADMIN="${ADMIN:-$(source_address)}"
 DECIMAL="${DECIMAL:-6}"
 NAME="${NAME:-Dummy USD Coin}"
 SYMBOL="${SYMBOL:-dUSDC}"
@@ -49,6 +47,7 @@ DUMMY_USDC_ID="$(stellar contract deploy \
   --wasm "$DUMMY_USDC_WASM" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- \
   --admin "$ADMIN" \
   --decimal "$DECIMAL" \
@@ -63,6 +62,7 @@ stellar contract invoke \
   --id "$DUMMY_USDC_ID" \
   --source "$SOURCE" \
   --network "$NETWORK" \
+  "${SIGN_ARGS[@]}" \
   -- \
   mint \
   --to "$ADMIN" \
@@ -74,4 +74,4 @@ echo "    DUMMY_USDC_ID=$DUMMY_USDC_ID"
 echo "    Minted ${MINT_WHOLE} $SYMBOL to $ADMIN"
 echo ""
 echo "    # mint more:"
-echo "    stellar contract invoke --id \$DUMMY_USDC_ID --source $SOURCE --network $NETWORK -- mint --to <ADDR> --amount 1000000000"
+echo "    DUMMY_USDC_ID=$DUMMY_USDC_ID TO=<ADDR> AMOUNT_WHOLE=1000 ./scripts/fund-dummy-usdc.sh"
