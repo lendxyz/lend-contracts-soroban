@@ -5,7 +5,7 @@
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | CBJ6ECNXWX3JEIDV35KL3LB3AS4BOO23E5I4AHWNTPLEMEVAHBV4WBYM |
-| Testnet | CCHD4SJKOLOTMSITJ5KBBWTWKRUH7CJYJB777RPFD3LBHKIMGVAGRYZD |
+| Testnet | CD7FI3F7HQJ2POJF6V2KVDT7Z5IJCH6A57XUE6YNUTE3D5PYMX2ZDXZQ |
 
 ## OpLend
 
@@ -14,7 +14,7 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | 304d156847955422d8bc09519038d30c76512cbe7c8c20a51b41c2ef833d2b8a |
-| Testnet | 5017951cede5e5092569d2b8873ad2bbd5016e6cf26a802700a4279d1fb30682 |
+| Testnet | 304d156847955422d8bc09519038d30c76512cbe7c8c20a51b41c2ef833d2b8a |
 
 
 ## Rewards
@@ -22,10 +22,10 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | CCSA4PQNTOZXJTFHHLBLBVU2YLNJMIFBKQAGE4IDGNJBHRRXDXO7QKN6 |
-| Testnet | CASVCVOAEAQCH5M3SYLCKKD3LRPA4JO2776EIKJQ2FJOF4KFONG223YW |
+| Testnet | CCDA226CTGRXT3AS2AXENI757ICIMOX3XTOSMPVICCXBLK56UY734ITE |
 
 ## Mock USDC (testnet only)
 
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
-| Testnet | CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN |
+| Testnet | CCZ7AXRKRCHHHITUPB42CWAWDY7TP753TLEGTFPANUTHZPLE5MAB6FAM |
