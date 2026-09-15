@@ -50,6 +50,13 @@ case "$NETWORK" in
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
     # Backend ed25519 key that authorizes invest / predeposit / fiat-invest.
     : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
+    # Local CLI identity holding that key's *secret*. fiat-invest.sh signs the
+    # FIAT_INVEST payload with it, so it must match BACKEND_SIGNER above.
+    : "${BACKEND_SIGNER_KEY:=lend-testnet-signer}"
+    # Custodial address fiat-invest.sh mints op-lend shares to when no HOLDER is
+    # given. The fiat investor settles in EUR off-chain and holds no wallet, so
+    # the shares sit here.
+    : "${FIAT_HOLDER:=GDTFJFH2PRJTVA5LNJVWSFJZGQI2UGYKBUU5RY7O76NYXKKUC2CDJ4MG}"
 
     : "${RPC_URL:=https://soroban-rpc.testnet.stellar.gateway.fm}"
     : "${NETWORK_PASSPHRASE:=Test SDF Network ; September 2015}"
@@ -92,6 +99,8 @@ case "$NETWORK" in
     : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
     : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
+    : "${BACKEND_SIGNER_KEY:=lend-mainnet-signer}"
+    : "${FIAT_HOLDER:=GDTFJFH2PRJTVA5LNJVWSFJZGQI2UGYKBUU5RY7O76NYXKKUC2CDJ4MG}"
 
     : "${RPC_URL:=https://soroban-rpc.mainnet.stellar.gateway.fm}"
     : "${NETWORK_PASSPHRASE:=Public Global Stellar Network ; September 2015}"

@@ -66,6 +66,57 @@ The signature must cover the contract's `build_invest_message`:
 `"ONCHAIN_INVEST" || factory_addr || id(u32 BE) || user_addr || shares(i128 BE) || nonce`,
 signed by the backend signer ed25519 key (see `contracts/factory/src/crypto.rs`).
 
+## `fiat-invest.sh`
+
+Settles an off-chain (fiat) investment on chain: mints op-lend shares to a
+holder, records no USDC. `fiat_invest` has no `require_auth` and no admin check
+— the backend ed25519 signature is the whole authorisation — so this script
+signs the payload locally with the backend signer key held in the Stellar CLI
+keystore (`BACKEND_SIGNER_KEY`, default `lend-testnet-signer` /
+`lend-mainnet-signer`) and submits the call in one step. No API involved.
+
+```bash
+NETWORK=mainnet \
+OP_ID=1 \             # required, operation id
+SHARES=1000000 \      # shares to mint, 6 decimals
+INVESTOR=G... \       # the fiat investor: named in the events, whitelisted
+HOLDER=G... \         # optional, receives the shares; defaults to $FIAT_HOLDER
+NONCE=fiat-1 \        # optional, defaults to fiat-<op>-<ts>-<rand>
+DRY_RUN=1 \           # optional, simulate only (--send=no)
+./scripts/fiat-invest.sh
+```
+
+`SOURCE` only pays the fee; the contract never checks it. `$INVESTOR` gets no
+`Position`, so a fiat participant is not refundable if the operation is
+cancelled (see `docs/threat-model-stride.md` DoS.1) — and the nonce is consumed
+**permanently**, so a failed submission needs a fresh one. Run `DRY_RUN=1`
+first: simulation runs the same signature check and funding guards as the real
+call without touching the nonce. (`common.sh` still prints its Ledger notice on
+mainnet; with `--send=no` nothing is signed.)
+
+`OP_ID`, `SHARES` and `INVESTOR` are required; a missing one aborts before
+anything is signed. `HOLDER` defaults to the network's `FIAT_HOLDER` in
+`common.sh` (`GDTFJFH2…`), the custodial address holding shares for investors
+who settled in EUR and have no wallet of their own.
+
+## `sign-fiat-invest.js`
+
+The signer behind `fiat-invest.sh`; run it directly to get a signature without
+submitting. Pure Node (no deps), reads everything from the environment so the
+secret never appears in `ps`, and emits `{ nonce, signature, signer_hex,
+message_hex }`.
+
+```bash
+SIGNER_SECRET="$(stellar keys secret lend-mainnet-signer)" \
+FACTORY_ID=C... OP_ID=1 SHARES=1000000 INVESTOR=G... HOLDER=G... \
+node scripts/sign-fiat-invest.js
+```
+
+The message mirrors `build_fiat_invest_message`:
+`"FIAT_INVEST" || factory_addr || id(u32 BE) || user_addr || holder_addr ||
+shares(i128 BE) || nonce` — fixed-width, so every address must be a 56-char
+strkey. Verified byte-for-byte against the contract's own builder.
+
 ## `update-backend-signer.sh`
 
 Admin-only. Updates the factory's backend signer — the ed25519 key whose

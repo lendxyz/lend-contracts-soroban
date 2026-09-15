@@ -24,6 +24,8 @@ build:
 #   make start-operation OP_ID=0
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
+#   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G...   # signs locally
+#   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G... DRY_RUN=1
 #   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
 #   make upgrade-contract CONTRACT=factory   # in place, same id + state
@@ -63,6 +65,11 @@ invest:
 invest-with-proof:
 	SOURCE=test-user ./scripts/invest-with-proof.sh
 
+# Signs the FIAT_INVEST payload with the backend signer key from the Stellar CLI
+# keystore, then calls fiat_invest. DRY_RUN=1 simulates without spending the nonce.
+fiat-invest:
+	./scripts/fiat-invest.sh
+
 fund-dummy-usdc:
 	./scripts/fund-dummy-usdc.sh
 
@@ -77,4 +84,4 @@ clean:
 
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
-	invest-with-proof fund-dummy-usdc update-backend-signer upgrade-contract
+	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract
