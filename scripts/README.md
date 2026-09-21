@@ -117,6 +117,126 @@ The message mirrors `build_fiat_invest_message`:
 shares(i128 BE) || nonce` — fixed-width, so every address must be a 56-char
 strkey. Verified byte-for-byte against the contract's own builder.
 
+## `deploy-op-lend-wallet.sh`
+
+Builds the wasms and deploys `OpLendWallet`, the custodial contract that holds
+op-lend shares for investors who settled in EUR and have no wallet of their own.
+Constructor takes admin + backend signer.
+
+```bash
+SOURCE=alice \
+NETWORK=testnet \  # optional, default testnet
+./scripts/deploy-op-lend-wallet.sh
+```
+
+`ADMIN` defaults to the `SOURCE` address. `BACKEND_SIGNER` defaults per
+`NETWORK` from `common.sh` and is accepted as a `G...` strkey (decoded to the
+raw 32-byte pubkey) or as 64 hex chars, same as `deploy-factory.sh`. Prints
+`OPLEND_WALLET_ID` on success — record it in `common.sh` and
+[`DEPLOYMENTS.md`](../DEPLOYMENTS.md).
+
+One wallet serves every operation: point it at each operation's op-lend token
+afterwards with `wallet-register-op-lend.sh`. It is the address you pass as `HOLDER` to
+`fiat-invest.sh` once deployed.
+
+## `wallet-register-op-lend.sh`
+
+Admin-only. Maps an operation id to its op-lend token address inside the wallet,
+so a redeem only has to name the `OP_ID`.
+
+```bash
+SOURCE=admin \        # wallet ADMIN
+OPLEND_WALLET_ID=C... \
+OP_ID=1 \             # operation id (u32)
+OPLEND=C... \         # that operation's op-lend token
+./scripts/wallet-register-op-lend.sh
+```
+
+Or register several in one transaction with `ENTRIES` (JSON, handed straight to
+`register_op_lends`):
+
+```bash
+SOURCE=admin \
+OPLEND_WALLET_ID=C... \
+ENTRIES='[{"op_id":1,"op_lend":"C..."},{"op_id":2,"op_lend":"C..."}]' \
+./scripts/wallet-register-op-lend.sh
+```
+
+Setting `ENTRIES` takes the batch path and ignores `OP_ID` / `OPLEND`. Only
+contract (`C...`) addresses are accepted on chain — a `G...` account is not a
+token and the call fails. Read a mapping back with `op_lend(op_id)`, and the
+wallet's own holding for an operation with `op_lend_balance(op_id)`.
+
+## `wallet-redeem.sh`
+
+Releases shares the wallet holds for a fiat investor to that investor's own
+wallet. `redeem` has no `require_auth` and no admin check — the backend ed25519
+signature over the `OP_REDEEM` payload plus a single-use nonce is the whole
+authorisation, exactly like `fiat_invest` — so this script signs the payload
+locally with the backend signer key held in the Stellar CLI keystore
+(`BACKEND_SIGNER_KEY`, default `lend-testnet-signer` / `lend-mainnet-signer`)
+and submits the call in one step. No API involved.
+
+```bash
+NETWORK=mainnet \
+OP_ID=1 \             # required, operation id
+DESTINATION=G... \    # required, the user wallet receiving the shares
+AMOUNT=1000000 \      # required, shares to release, 6 decimals
+NONCE=redeem-1 \      # optional, defaults to redeem-<op>-<ts>-<rand>
+WHITELIST=1 \         # optional, whitelist DESTINATION in the same tx
+WL_NONCE=wl-1 \       # optional, nonce for the whitelist signature
+DRY_RUN=1 \           # optional, simulate only (--send=no)
+./scripts/wallet-redeem.sh
+```
+
+`SOURCE` only pays the fee; the contract never checks it, so a relayer identity
+is enough. `OP_ID`, `DESTINATION` and `AMOUNT` are required; a missing one
+aborts before anything is signed, and the operation must already be registered
+(`wallet-register-op-lend.sh`).
+
+The nonce is consumed **permanently**, so a failed submission needs a fresh one.
+Run `DRY_RUN=1` first: simulation runs the same signature check and transfer
+guards as the real call without touching the nonce. (`common.sh` still prints
+its Ledger notice on mainnet; with `--send=no` nothing is signed.)
+
+`WHITELIST=1` switches the call to `whitelist_and_redeem`, which whitelists
+`DESTINATION` on the op-lend token before transferring. Use it for any
+destination the token has never seen: op-lend `transfer` requires **both** sides
+whitelisted, and a fresh user wallet that never received a mint is not. The
+wallet itself was whitelisted when the factory minted to it. `WL_NONCE` is that
+second signature's nonce, consumed by the op-lend token rather than by the
+wallet, and defaults alongside `NONCE`.
+
+## `sign-redeem.js`
+
+The signer behind `wallet-redeem.sh`; run it directly to get a signature without
+submitting. Pure Node (no deps), reads everything from the environment so the
+secret never appears in `ps`, and emits `{ nonce, signature, signer_hex,
+message_hex }` — plus a `whitelist` object carrying its own `nonce`,
+`signature` and `message_hex` when `OPLEND_ID` is set (`null` otherwise).
+
+```bash
+SIGNER_SECRET="$(stellar keys secret lend-mainnet-signer)" \
+WALLET_ID=C... OP_ID=1 DESTINATION=G... AMOUNT=1000000 \
+node scripts/sign-redeem.js
+```
+
+`SIGNER_SECRET`, `WALLET_ID`, `OP_ID`, `DESTINATION` and `AMOUNT` are required;
+`NONCE` (generated otherwise), `OPLEND_ID` (the op-lend token — set it to also
+get the whitelist signature) and `WL_NONCE` are optional.
+
+Two messages, each a raw ed25519 signature over the concatenated bytes (no
+hashing envelope), fixed-width, so every address must be a 56-char strkey:
+
+- `OP_REDEEM`, verified by the wallet — `"OP_REDEEM" || wallet_addr ||
+  op_id(u32 BE) || destination_addr || amount(i128 BE) || nonce`
+- whitelist, verified by the op-lend token itself (unchanged, see
+  `contracts/op-lend/src/crypto.rs`) — `oplend_addr || user_addr || nonce`
+
+Both verified byte-for-byte against the contracts' own builders. Nonces are
+namespaced per contract — the wallet's redeem nonces and the op-lend token's
+whitelist nonces are separate stores — so `NONCE` and `WL_NONCE` never collide.
+
 ## `update-backend-signer.sh`
 
 Admin-only. Updates the factory's backend signer — the ed25519 key whose
@@ -279,3 +399,9 @@ Verified 2026-06-02 (on-chain + Circle/Stellar docs).
 - `BACKEND_SIGNER` is the ed25519 **public** key the backend signs invest /
   whitelist messages with. The message format the backend must reproduce is in
   `contracts/factory/src/crypto.rs` and `contracts/op-lend/src/crypto.rs`.
+- `OPLEND_WALLET_ID` is the deployed `OpLendWallet` (`wallet-register-op-lend.sh`,
+  `wallet-redeem.sh`, `upgrade-contract.sh CONTRACT=wallet`). It lives in `common.sh`
+  alongside `FACTORY_ID` / `REWARDS_ID`: set for testnet, and **empty on
+  mainnet until the first `deploy-op-lend-wallet.sh`** — until then `req`
+  aborts the scripts that need it, so record the new id there (and in
+  [`DEPLOYMENTS.md`](../DEPLOYMENTS.md)) right after deploying.

@@ -860,6 +860,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lend_wallet"
+version = "0.0.0"
+dependencies = [
+ "ed25519-dalek",
+ "soroban-sdk",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.183"
 source = "registry+https://github.com/rust-lang/crates.io-index"

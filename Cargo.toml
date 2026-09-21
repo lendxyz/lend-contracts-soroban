@@ -4,6 +4,7 @@ members = [
     "contracts/dummy-usdc",
     "contracts/factory",
     "contracts/op-lend",
+    "contracts/op-lend-wallet",
     "contracts/rewards",
 ]
 

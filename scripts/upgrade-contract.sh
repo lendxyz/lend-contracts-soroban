@@ -17,7 +17,7 @@
 # the target contract's admin.
 #
 # Required env vars:
-#   CONTRACT       Which contract to upgrade: factory | rewards.
+#   CONTRACT       Which contract to upgrade: factory | rewards | wallet.
 #
 # Optional env vars:
 #   CONTRACT_ID    Override the id resolved from common.sh.
@@ -27,6 +27,7 @@
 # Usage:
 #   CONTRACT=factory ./scripts/upgrade-contract.sh
 #   CONTRACT=rewards NETWORK=mainnet ./scripts/upgrade-contract.sh
+#   CONTRACT=wallet ./scripts/upgrade-contract.sh
 #
 set -euo pipefail
 
@@ -40,13 +41,20 @@ case "$CONTRACT" in
   factory)
     : "${CONTRACT_ID:=${FACTORY_ID:-}}"
     : "${WASM:=$WASM_DIR/lend_factory.wasm}"
+    DEPLOY_SCRIPT="scripts/deploy-factory.sh"
     ;;
   rewards)
     : "${CONTRACT_ID:=${REWARDS_ID:-}}"
     : "${WASM:=$WASM_DIR/lend_rewards.wasm}"
+    DEPLOY_SCRIPT="scripts/deploy-rewards.sh"
+    ;;
+  wallet | op-lend-wallet)
+    : "${CONTRACT_ID:=${OPLEND_WALLET_ID:-}}"
+    : "${WASM:=$WASM_DIR/lend_wallet.wasm}"
+    DEPLOY_SCRIPT="scripts/deploy-op-lend-wallet.sh"
     ;;
   *)
-    echo "error: CONTRACT must be factory | rewards (got '$CONTRACT')" >&2
+    echo "error: CONTRACT must be factory | rewards | wallet (got '$CONTRACT')" >&2
     exit 1
     ;;
 esac
@@ -67,7 +75,7 @@ echo "==> Checking the deployed contract exposes upgrade()..."
 if ! stellar contract info interface --id "$CONTRACT_ID" "${NETWORK_ARGS[@]}" \
   | grep -q 'fn upgrade'; then
   echo "error: $CONTRACT_ID has no upgrade() entrypoint, so its code is frozen." >&2
-  echo "       Deploy a fresh instance instead (scripts/deploy-$CONTRACT.sh)," >&2
+  echo "       Deploy a fresh instance instead ($DEPLOY_SCRIPT)," >&2
   echo "       then record the new id in DEPLOYMENTS.md + scripts/common.sh." >&2
   exit 1
 fi

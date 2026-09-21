@@ -5,8 +5,10 @@ and tokenized-securities platform on Stellar. The core of the system is a
 `Factory` that runs the full lifecycle of a tokenized funding operation and
 deploys a restricted `OpLend` token per operation.
 
-The repository also ships two supporting contracts: `LendRewards` (merkle-based
-reward distribution) and `DummyUSDC` (a testnet-only USDC stand-in).
+The repository also ships three supporting contracts: `OpLendWallet` (a
+custodial holder of op-lend shares for fiat investors), `LendRewards`
+(merkle-based reward distribution) and `DummyUSDC` (a testnet-only USDC
+stand-in).
 
 ---
 
@@ -16,6 +18,7 @@ reward distribution) and `DummyUSDC` (a testnet-only USDC stand-in).
 - [Contracts](#contracts)
   - [Factory](#factory)
   - [OpLend token](#oplend-token)
+  - [OpLendWallet](#oplendwallet)
   - [LendRewards](#lendrewards)
   - [DummyUSDC](#dummyusdc)
 - [Backend signature scheme](#backend-signature-scheme)
@@ -56,6 +59,9 @@ reward distribution) and `DummyUSDC` (a testnet-only USDC stand-in).
   raise), deployed deterministically by the Factory from an uploaded WASM hash.
 - Investments are authorized off-chain (after KYC) by a **backend signer**; the
   Factory verifies an ed25519 signature on-chain before accepting funds.
+- Investors who settled in EUR never touch the chain: `fiat_invest` mints their
+  shares to the **OpLendWallet**, which releases them to the investor's own
+  wallet later, against a backend signature over an `OP_REDEEM` message.
 - Share pricing uses a **Reflector (SEP-40)** oracle adapter for the EUR/USD
   rate. The interface is defined in [`oracle.rs`](contracts/factory/src/oracle.rs)
   and exercised against a mock in tests.
@@ -128,6 +134,35 @@ Constructor parameters: `admin`, `decimal` (≤ 6), `name`, `symbol`,
 `max_supply`, `backend_signer`. In production the Factory is the `admin` and the
 `max_supply` is the operation's `total_shares`.
 
+### OpLendWallet
+
+[`contracts/op-lend-wallet`](contracts/op-lend-wallet) — `OpLendWallet`.
+
+The custodial holder of op-lend shares for investors who settled in EUR and have
+no wallet of their own: `fiat_invest` mints to it, and it releases the shares to
+the investor once they do have one.
+
+- **Registry** — `register_op_lend` / `register_op_lends` (admin) map an
+  operation id to its op-lend token, so a redeem only has to name the `op_id`.
+  `op_lend_balance(op_id)` reports what the wallet still holds for an operation.
+- **Redeem** — `redeem(op_id, destination, amount, nonce, signature)` has no
+  `require_auth` and no admin check: a backend ed25519 signature over the
+  `OP_REDEEM` message plus a single-use nonce is the whole authorization, the
+  same model as the Factory's `fiat_invest`. The caller can therefore be
+  anybody — a relayer only pays the fee.
+- **Whitelist + redeem** — op-lend `transfer` requires **both** sides
+  whitelisted, so `whitelist_and_redeem` first calls the token's own
+  `whitelist_user` with a second signed message (the token's whitelist layout,
+  verified by the token itself) and then transfers, paying out to a wallet the
+  token has never seen in a single transaction.
+- **Admin controls** — `admin_redeem` (same transfer, no signature: the escape
+  hatch), `set_admin`, `update_backend_signer`, and `upgrade(new_wasm_hash)`,
+  which swaps the code in place — same contract id, registry and used nonces
+  survive.
+
+Constructor parameters: `admin`, `backend_signer`. One wallet serves every
+operation; it is the address `fiat_invest` is given as the `oplend_holder`.
+
 ### LendRewards
 
 [`contracts/rewards`](contracts/rewards) — `LendRewards`.
@@ -166,6 +201,7 @@ Canonical messages (byte-concatenated):
 | `invest` / `predeposit` | `"ONCHAIN_INVEST"` ‖ contract_address ‖ `id` (BE u32) ‖ user ‖ `amount` (BE i128) ‖ `nonce` |
 | `fiat_invest`  | `"FIAT_INVEST"` ‖ contract_address ‖ `id` ‖ user ‖ oplend_holder ‖ `amount` ‖ `nonce` |
 | OpLend `whitelist_user` | contract_address ‖ user ‖ `nonce` |
+| OpLendWallet `redeem` | `"OP_REDEEM"` ‖ contract_address ‖ `op_id` (BE u32) ‖ destination ‖ `amount` (BE i128) ‖ `nonce` |
 
 The contract address domain-separates signatures per deployment (replacing the
 EVM `chainid`). The matching off-chain signer lives in the `lend-worker-stellar`
@@ -344,6 +380,35 @@ fn max_supply() -> i128
 fn get_allowance(from, spender) -> Option<AllowanceValue>
 ```
 
+### OpLendWallet (`OpLendWallet`)
+
+```rust
+fn __constructor(admin, backend_signer: BytesN<32>)
+
+// Registry
+fn register_op_lend(op_id: u32, op_lend)                   // admin
+fn register_op_lends(entries: Vec<OpLendEntry>)            // admin
+
+// Redeem
+fn redeem(op_id: u32, destination, amount: i128, nonce: String, signature: BytesN<64>)
+fn whitelist_and_redeem(op_id: u32, destination, amount: i128,
+                        t_nonce: String, t_signature: BytesN<64>,   // op-lend whitelist_user
+                        r_nonce: String, r_signature: BytesN<64>)   // OP_REDEEM
+fn admin_redeem(op_id: u32, destination, amount: i128)     // admin; no signature
+
+// Admin
+fn set_admin(new_admin)                                    // admin
+fn update_backend_signer(new_signer: BytesN<32>)           // admin
+fn upgrade(new_wasm_hash: BytesN<32>)                      // admin; in place, state survives
+
+// Getters
+fn admin() -> Address
+fn backend_signer() -> BytesN<32>
+fn op_lend(op_id: u32) -> Address
+fn op_lend_balance(op_id: u32) -> i128                     // the wallet's own balance
+fn nonce_used(nonce: String) -> bool
+```
+
 ---
 
 ## Building
@@ -371,6 +436,7 @@ make test           # build, then cargo test
 # or directly:
 cargo test
 cargo test -p factory          # a single contract's suite
+cargo test -p lend_wallet      # the OpLendWallet suite
 ```
 
 Tests run against the Soroban test host (no network needed) and cover:
@@ -389,6 +455,10 @@ Tests run against the Soroban test host (no network needed) and cover:
 - **OpLend token** — minting, supply-cap enforcement, transfer restrictions,
   whitelist (admin + signature) and blacklist behavior.
 - **Oracle pricing** — via a mock oracle implementing the SEP-40 interface.
+- **OpLendWallet** — redeem against a live op-lend token, every signed field
+  bound to the signature (amount, destination, wallet address), nonce replay,
+  `whitelist_and_redeem` onboarding a fresh destination, the admin surface and
+  an in-place `upgrade`.
 - **Rewards** — merkle proof verification, idempotent claims, immutable roots.
 
 ### Coverage
@@ -407,10 +477,13 @@ Network, signer and contract addresses live in one place,
 ```sh
 make deploy-factory
 make deploy-rewards
+make deploy-op-lend-wallet
 make deploy-dummy-usdc
 make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 make start-operation OP_ID=0
 make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
+make wallet-register-op-lend OP_ID=1 OPLEND=C...            # wallet: op id -> op-lend token
+make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 DRY_RUN=1   # simulate a release
 
 # mainnet uses the same targets and signs on a Ledger
 # (plug it in, unlock it, open the Stellar app, approve each transaction)
@@ -427,6 +500,7 @@ extra variables it needs.
 contracts/
   factory/      LendFactory — operation & funding lifecycle, OpLend deployer
   op-lend/      OpLendToken — SEP-41 token with transfer restrictions + cap
+  op-lend-wallet/ OpLendWallet — custodial holder of op-lend shares (fiat investors)
   rewards/      LendRewards — merkle-based reward distribution
   dummy-usdc/   DummyUSDC   — testnet-only open-mint USDC stand-in
 scripts/        deploy + interaction scripts (shared config: common.sh)

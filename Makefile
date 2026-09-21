@@ -18,6 +18,7 @@ build:
 #   make deploy-factory
 #   make deploy-rewards
 #   make deploy-dummy-usdc
+#   make deploy-op-lend-wallet
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3                 # uses sample recipients
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
@@ -26,9 +27,13 @@ build:
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
 #   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G...   # signs locally
 #   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G... DRY_RUN=1
+#   make wallet-register-op-lend OP_ID=1 OPLEND=C...   # wallet needs the op token
+#   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000
+#   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 WHITELIST=1 DRY_RUN=1
 #   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
 #   make upgrade-contract CONTRACT=factory   # in place, same id + state
+#   make upgrade-contract CONTRACT=wallet
 #
 # Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
 #   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
@@ -38,6 +43,11 @@ deploy-factory:
 
 deploy-rewards:
 	./scripts/deploy-rewards.sh
+
+# Custodial wallet that holds op-lend shares for fiat investors until they are
+# redeemed to a real user wallet.
+deploy-op-lend-wallet:
+	./scripts/deploy-op-lend-wallet.sh
 
 # In-place code swap for contracts that expose upgrade(); see the script header.
 upgrade-contract:
@@ -70,6 +80,19 @@ invest-with-proof:
 fiat-invest:
 	./scripts/fiat-invest.sh
 
+# Maps an operation id to its op-lend token on the wallet, without which a
+# redeem has no token to transfer. ENTRIES='[{"op_id":1,"op_lend":"C..."}]'
+# registers a batch in one call.
+wallet-register-op-lend:
+	./scripts/wallet-register-op-lend.sh
+
+# Signs the OP_REDEEM payload with the backend signer key from the Stellar CLI
+# keystore, then releases shares from the wallet. WHITELIST=1 whitelists the
+# destination on the op token in the same call; DRY_RUN=1 simulates without
+# spending a nonce.
+wallet-redeem:
+	./scripts/wallet-redeem.sh
+
 fund-dummy-usdc:
 	./scripts/fund-dummy-usdc.sh
 
@@ -84,4 +107,5 @@ clean:
 
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
-	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract
+	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract \
+	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem
