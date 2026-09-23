@@ -57,7 +57,7 @@ case "$NETWORK" in
     # Custodial address fiat-invest.sh mints op-lend shares to when no HOLDER is
     # given. The fiat investor settles in EUR off-chain and holds no wallet, so
     # the shares sit here.
-    : "${FIAT_HOLDER:=GDTFJFH2PRJTVA5LNJVWSFJZGQI2UGYKBUU5RY7O76NYXKKUC2CDJ4MG}"
+    : "${FIAT_HOLDER:=CBUIDJMBY4FUBXVD24ZBO2PABJDEH3PYMPCR7VYI7NLARN4DN5EN2FL3}"
 
     : "${RPC_URL:=https://soroban-rpc.testnet.stellar.gateway.fm}"
     : "${NETWORK_PASSPHRASE:=Test SDF Network ; September 2015}"
@@ -102,7 +102,7 @@ case "$NETWORK" in
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
     : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
     : "${BACKEND_SIGNER_KEY:=lend-mainnet-signer}"
-    : "${FIAT_HOLDER:=GDTFJFH2PRJTVA5LNJVWSFJZGQI2UGYKBUU5RY7O76NYXKKUC2CDJ4MG}"
+    : "${FIAT_HOLDER:=CACWIITWTXV47Z5EGVCE73HO5JEZENPZZFKQYPCZDWLNB5TF6RJ44CBI}"
 
     : "${RPC_URL:=https://soroban-rpc.mainnet.stellar.gateway.fm}"
     : "${NETWORK_PASSPHRASE:=Public Global Stellar Network ; September 2015}"
