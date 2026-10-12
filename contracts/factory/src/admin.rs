@@ -13,6 +13,7 @@ fn refund_one(
     oplend: &OpLendClient,
     usdc: &token::Client,
     user: Address,
+    withdrawn: i128,
 ) {
     let mut pos = st::read_position(e, id, &user);
     let invested = pos.invested;
@@ -23,6 +24,11 @@ fn refund_one(
     }
     if oplend_balance == 0 {
         panic_with_error!(e, Error::NoOpLendBalance);
+    }
+    // USDC of every operation sits in one balance: refunding more than this
+    // operation still holds would pay out another operation's escrow.
+    if invested > op.usdc_raised - withdrawn {
+        panic_with_error!(e, Error::InsufficientEscrow);
     }
 
     op.funding_progress -= oplend_balance;
@@ -48,7 +54,16 @@ pub fn refund_user(e: &Env, id: u32, user: Address) {
 
     let mut op = st::read_op(e, id);
     let oplend = OpLendClient::new(e, &op.op_token);
-    refund_one(e, id, &mut op, &oplend, &st::usdc_client(e), user);
+    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
+    refund_one(
+        e,
+        id,
+        &mut op,
+        &oplend,
+        &st::usdc_client(e),
+        user,
+        withdrawn,
+    );
     st::write_op(e, id, &op);
 }
 
@@ -62,8 +77,9 @@ pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>, len: u32) {
     let mut op = st::read_op(e, id);
     let oplend = OpLendClient::new(e, &op.op_token);
     let usdc = st::usdc_client(e);
+    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
     for user in users.iter().take(len as usize) {
-        refund_one(e, id, &mut op, &oplend, &usdc, user);
+        refund_one(e, id, &mut op, &oplend, &usdc, user, withdrawn);
     }
     st::write_op(e, id, &op);
 }
@@ -127,20 +143,32 @@ pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     st::bump_instance(e);
 
     let mut op = st::read_op(e, id);
-    if !op.flag(F_STARTED) || !op.fully_funded() {
-        panic_with_error!(e, Error::OperationNotFinished);
+    if !op.flag(F_STARTED) {
+        panic_with_error!(e, Error::OperationNotStarted);
     }
-    if op.flag(F_WITHDRAWN) {
-        panic_with_error!(e, Error::AlreadyWithdrawn);
+    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
+    let amount = op.usdc_raised - withdrawn;
+    if amount <= 0 {
+        panic_with_error!(e, Error::NothingToWithdraw);
     }
-    op.set_flag(F_WITHDRAWN, true);
-    st::write_op(e, id, &op);
+
+    st::write_usdc_withdrawn(e, id, op.usdc_raised);
+    if !op.flag(F_WITHDRAWN) {
+        op.set_flag(F_WITHDRAWN, true);
+        st::write_op(e, id, &op);
+    }
 
     st::usdc_client(e).transfer(
         &e.current_contract_address(),
         &destination,
-        &op.usdc_raised,
+        &amount,
     );
+
+    events::FundingWithdrawn {
+        operation_id: id,
+        usdc_amount: amount,
+    }
+    .publish(e);
 }
 
 pub fn transfer_ownership(e: &Env, new_admin: Address) {

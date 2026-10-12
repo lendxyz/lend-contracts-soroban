@@ -43,6 +43,11 @@ pub fn usdc_withdrawn(e: &Env, id: u32) -> bool {
     st::read_op(e, id).flag(F_WITHDRAWN)
 }
 
+pub fn usdc_withdrawn_amount(e: &Env, id: u32) -> i128 {
+    let op = st::read_op(e, id);
+    st::read_usdc_withdrawn(e, id, &op)
+}
+
 pub fn operation_canceled(e: &Env, id: u32) -> bool {
     st::read_op(e, id).flag(F_CANCELED)
 }

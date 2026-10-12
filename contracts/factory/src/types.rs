@@ -27,6 +27,8 @@ pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
 pub const F_PREDEPOSITS: u32 = 1 << 3;
+/// Set on the first `withdraw_usdc`; the amount lives under
+/// `DataKey::UsdcWithdrawn`.
 pub const F_WITHDRAWN: u32 = 1 << 4;
 
 /// Everything a funding path needs, in a single ledger entry.
@@ -114,4 +116,8 @@ pub enum DataKey {
     Position(u32, Address),
     Blacklisted(Address),
     UsedNonce(String),
+    /// Cumulative USDC withdrawn from an operation. Kept out of [`OpData`]
+    /// because adding a field there would make every already-stored `Op`
+    /// entry undecodable. New variants MUST be appended, never reordered.
+    UsdcWithdrawn(u32),
 }

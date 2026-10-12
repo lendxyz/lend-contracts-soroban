@@ -111,3 +111,10 @@ pub struct Refunded {
     pub usdc_amount: i128,
     pub shares_refunded: i128,
 }
+
+#[contractevent]
+pub struct FundingWithdrawn {
+    #[topic]
+    pub operation_id: u32,
+    pub usdc_amount: i128,
+}

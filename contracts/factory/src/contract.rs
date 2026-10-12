@@ -250,6 +250,10 @@ impl LendFactory {
         getters::usdc_withdrawn(&env, id)
     }
 
+    pub fn usdc_withdrawn_amount(env: Env, id: u32) -> i128 {
+        getters::usdc_withdrawn_amount(&env, id)
+    }
+
     pub fn operation_canceled(env: Env, id: u32) -> bool {
         getters::operation_canceled(&env, id)
     }

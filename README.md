@@ -69,18 +69,22 @@ stand-in).
 ### Operation lifecycle
 
 ```
-create_operation ──► [created] ──► start_operation ──► [open] ──► funding fills ──► [finished] ──► withdraw_usdc
+create_operation ──► [created] ──► start_operation ──► [open] ──► funding fills ──► [finished]
                           │                               │
                           │                               ├─ pause_funding(true/false)
-                          │                               └─ invest / fiat_invest / gift_op_tokens
+                          │                               ├─ invest / fiat_invest / gift_op_tokens
+                          │                               └─ withdraw_usdc (any time once started, repeatable)
                           │
                           ├─ set_predeposits(true) ──► predeposit ... ──► (auto-start when filled) ──► claim_op_tokens
                           │
                           └─ cancel_operation ──► [canceled] ──► refund_user / batch_refund_users
 ```
 
-An operation is **finished** when `funding_progress >= total_shares`. Funds can
-only be withdrawn once finished, and only once.
+An operation is **finished** when `funding_progress >= total_shares`. Raised
+USDC can be withdrawn any time after the operation starts, including during the
+sale; each `withdraw_usdc` sends what was raised since the previous one. A
+refund that exceeds what the operation still escrows (raised − withdrawn) fails
+with `InsufficientEscrow`, since all operations share one USDC balance.
 
 ---
 
@@ -102,8 +106,8 @@ Responsibilities:
 - **Claiming**: `claim_op_tokens` / `claim_op_tokens_batch` mint the OpLend
   tokens accumulated through pre-deposits and gifts.
 - **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn OpLend and
-  return escrowed USDC; `withdraw_usdc` releases raised funds once an operation
-  is finished.
+  return escrowed USDC; `withdraw_usdc` releases the raised funds not yet
+  withdrawn, any time after an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
   `oplend_whitelist_user`, `oplend_update_backend_signer`, and
   `oplend_admin_burn`.
@@ -341,6 +345,7 @@ fn funding_paused(id) -> bool
 fn operation_started(id) -> bool
 fn operation_canceled(id) -> bool
 fn usdc_withdrawn(id) -> bool
+fn usdc_withdrawn_amount(id) -> i128
 fn predeposits_open(id) -> bool
 fn usdc_raised_per_client(id, user) -> i128
 fn predeposits(id, user) -> i128

@@ -394,6 +394,122 @@ fn test_withdraw_usdc_after_finish() {
     assert!(s.factory.usdc_withdrawn(&id));
 }
 
+fn invest_as(s: &Setup, id: u32, user: &Address, shares: i128, nonce: &str) {
+    let nonce = String::from_str(&s.e, nonce);
+    let sig = sign_invest(&s.e, &s.factory_id, id, user, shares, &nonce);
+    s.factory.invest(user, &id, &shares, &nonce, &sig);
+}
+
+/// Withdrawal no longer waits for the end of the sale; each call takes only
+/// what was raised since the previous one.
+#[test]
+fn test_withdraw_usdc_during_sale_is_incremental() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &100_000);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    let dest = Address::generate(&s.e);
+
+    invest_as(&s, id, &user, 100, "n1");
+    assert!(!s.factory.is_operation_finished(&id));
+    s.factory.withdraw_usdc(&id, &dest);
+    assert_eq!(usdc_tok.balance(&dest), 1100);
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
+    assert!(s.factory.usdc_withdrawn(&id));
+    assert_eq!(
+        s.factory.try_withdraw_usdc(&id, &dest),
+        Err(Ok(Error::NothingToWithdraw.into()))
+    );
+
+    // The sale is still open after a withdrawal.
+    invest_as(&s, id, &user, 50, "n2");
+    s.factory.withdraw_usdc(&id, &dest);
+    assert_eq!(usdc_tok.balance(&dest), 1650);
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1650);
+    assert_eq!(s.factory.usdc_raised(&id), 1650);
+    assert_eq!(usdc_tok.balance(&s.factory_id), 0);
+}
+
+#[test]
+fn test_withdraw_usdc_before_start_fails() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.set_predeposits(&id, &true);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "p1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 50, &nonce);
+    s.factory.predeposit(&user, &id, &50, &nonce, &sig);
+
+    assert_eq!(
+        s.factory.try_withdraw_usdc(&id, &Address::generate(&s.e)),
+        Err(Ok(Error::OperationNotStarted.into()))
+    );
+}
+
+/// The factory pools every operation's USDC in one balance, so a refund on an
+/// operation whose funds were already withdrawn must not be paid out of
+/// another operation's escrow.
+#[test]
+fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
+    let s = setup();
+    let (a, _) = create_op(&s, 1000);
+    let (b, _) = create_op(&s, 1000);
+    s.factory.start_operation(&a);
+    s.factory.start_operation(&b);
+    let early = Address::generate(&s.e);
+    let late = Address::generate(&s.e);
+    let other = Address::generate(&s.e);
+    for u in [&early, &late, &other] {
+        s.usdc.mint(u, &10_000);
+    }
+
+    invest_as(&s, a, &early, 100, "a1");
+    s.factory.withdraw_usdc(&a, &Address::generate(&s.e));
+    invest_as(&s, a, &late, 10, "a2");
+    invest_as(&s, b, &other, 100, "b1");
+
+    assert_eq!(
+        s.factory.try_refund_user(&a, &early),
+        Err(Ok(Error::InsufficientEscrow.into()))
+    );
+    // Money invested after the withdrawal is still escrowed and refundable.
+    s.factory.refund_user(&a, &late);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    assert_eq!(usdc_tok.balance(&late), 10_000);
+    assert_eq!(usdc_tok.balance(&s.factory_id), 1100); // operation b, intact
+}
+
+/// Operations withdrawn by the previously deployed code carry `F_WITHDRAWN`
+/// but no `UsdcWithdrawn` entry; they must read as fully withdrawn rather than
+/// letting the admin take the same USDC a second time.
+#[test]
+fn test_legacy_withdrawn_operation_counts_as_fully_withdrawn() {
+    use crate::types::{DataKey, OpData, F_WITHDRAWN};
+
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    invest_as(&s, id, &user, 100, "n1");
+
+    s.e.as_contract(&s.factory_id, || {
+        let key = DataKey::Op(id);
+        let mut op: OpData = s.e.storage().persistent().get(&key).unwrap();
+        op.set_flag(F_WITHDRAWN, true);
+        s.e.storage().persistent().set(&key, &op);
+    });
+
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
+    assert_eq!(
+        s.factory.try_withdraw_usdc(&id, &Address::generate(&s.e)),
+        Err(Ok(Error::NothingToWithdraw.into()))
+    );
+}
+
 #[test]
 fn test_canceled_blocks_invest() {
     let s = setup();

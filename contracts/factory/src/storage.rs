@@ -1,7 +1,7 @@
 use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
 use crate::errors::Error;
-use crate::types::{DataKey, OpData, Position};
+use crate::types::{DataKey, OpData, Position, F_WITHDRAWN};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 
@@ -115,6 +115,25 @@ pub fn read_op_name(e: &Env, id: u32) -> String {
 pub fn write_op_name(e: &Env, id: u32, name: &String) {
     let key = DataKey::OpName(id);
     e.storage().persistent().set(&key, name);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
+}
+
+/// Cumulative USDC withdrawn from operation `id`. Operations withdrawn by the
+/// previous code (a single full withdrawal, recorded only as `F_WITHDRAWN`)
+/// have no entry: everything raised at that point was taken.
+pub fn read_usdc_withdrawn(e: &Env, id: u32, op: &OpData) -> i128 {
+    match e.storage().persistent().get(&DataKey::UsdcWithdrawn(id)) {
+        Some(amount) => amount,
+        None if op.flag(F_WITHDRAWN) => op.usdc_raised,
+        None => 0,
+    }
+}
+
+pub fn write_usdc_withdrawn(e: &Env, id: u32, amount: i128) {
+    let key = DataKey::UsdcWithdrawn(id);
+    e.storage().persistent().set(&key, &amount);
     e.storage()
         .persistent()
         .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);

@@ -20,12 +20,14 @@ pub enum Error {
     NonceAlreadyUsed = 14,
     BatchTooLarge = 15,
     InvalidBatchLen = 16,
-    OperationNotFinished = 17,
-    AlreadyWithdrawn = 18,
+    // 17 (`OperationNotFinished`) retired: withdrawals no longer wait for the
+    // end of the sale. Do not reuse the code.
+    NothingToWithdraw = 18,
     NoParticipation = 19,
     NoOpLendBalance = 20,
     SelfTargetNotAllowed = 21,
     OracleNoPrice = 22,
     OracleInvalidPrice = 23,
     OracleStalePrice = 24,
+    InsufficientEscrow = 25,
 }
