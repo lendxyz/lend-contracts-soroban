@@ -23,6 +23,8 @@ build:
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 #   make start-operation OP_ID=0
+#   make withdraw-usdc OP_ID=1 DESTINATION=G...
+#   make withdraw-usdc OP_ID=1 DESTINATION=G... DRY_RUN=1
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
 #   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G...   # signs locally
@@ -67,6 +69,11 @@ create-operation:
 start-operation:
 	./scripts/start-operation.sh
 
+# Admin-only. Sends the USDC an operation raised since the last withdrawal to
+# DESTINATION. DRY_RUN=1 simulates without submitting.
+withdraw-usdc:
+	./scripts/withdraw-usdc.sh
+
 invest:
 	./scripts/invest.sh
 
@@ -108,4 +115,4 @@ clean:
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
 	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract \
-	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem
+	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem withdraw-usdc

@@ -46,6 +46,22 @@ OP_ID=0 \
 ./scripts/start-operation.sh
 ```
 
+## `withdraw-usdc.sh`
+
+Admin-only. Sends the USDC an operation raised since the previous withdrawal
+(`usdc_raised - usdc_withdrawn_amount`) from the factory to `DESTINATION`.
+Allowed any time after the operation starts, including during the sale.
+
+```bash
+OP_ID=1 \             # required, operation id
+DESTINATION=G... \    # required, receives the USDC
+DRY_RUN=1 \           # optional, simulate only (--send=no)
+./scripts/withdraw-usdc.sh
+```
+
+Prints raised / withdrawn / pending first and aborts before signing when
+nothing is pending (the contract would fail with `NothingToWithdraw`).
+
 ## `invest.sh`
 
 Invest in a started operation. `SOURCE` is the investor (signs the tx and pays
