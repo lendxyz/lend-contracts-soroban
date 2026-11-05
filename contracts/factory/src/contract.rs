@@ -41,6 +41,11 @@ impl LendFactory {
             .set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
     }
 
+    /// Sets the EURC token `invest_eur` accepts. Admin-only and write-once.
+    pub fn set_eurc(env: Env, eurc: Address) {
+        admin::set_eurc(&env, eurc);
+    }
+
     // --- Operations ---
 
     pub fn create_operation(
@@ -84,6 +89,17 @@ impl LendFactory {
         signature: BytesN<64>,
     ) {
         invest::invest(&env, user, id, shares_amount, nonce, signature);
+    }
+
+    pub fn invest_eur(
+        env: Env,
+        user: Address,
+        id: u32,
+        shares_amount: i128,
+        nonce: String,
+        signature: BytesN<64>,
+    ) {
+        invest::invest_eur(&env, user, id, shares_amount, nonce, signature);
     }
 
     pub fn fiat_invest(
@@ -136,6 +152,10 @@ impl LendFactory {
 
     pub fn get_amount_in(env: Env, id: u32, shares_amount: i128) -> i128 {
         invest::get_amount_in(&env, id, shares_amount)
+    }
+
+    pub fn get_amount_in_eur(env: Env, id: u32, shares_amount: i128) -> i128 {
+        invest::get_amount_in_eur(&env, id, shares_amount)
     }
 
     pub fn get_amount_out(env: Env, id: u32, usdc_amount: i128) -> i128 {
@@ -214,6 +234,10 @@ impl LendFactory {
         getters::usdc(&env)
     }
 
+    pub fn eurc(env: Env) -> Address {
+        getters::eurc(&env)
+    }
+
     pub fn operation_count(env: Env) -> u32 {
         getters::operation_count(&env)
     }
@@ -254,12 +278,24 @@ impl LendFactory {
         getters::usdc_withdrawn_amount(&env, id)
     }
 
+    pub fn eurc_raised(env: Env, id: u32) -> i128 {
+        getters::eurc_raised(&env, id)
+    }
+
+    pub fn eurc_withdrawn_amount(env: Env, id: u32) -> i128 {
+        getters::eurc_withdrawn_amount(&env, id)
+    }
+
     pub fn operation_canceled(env: Env, id: u32) -> bool {
         getters::operation_canceled(&env, id)
     }
 
     pub fn usdc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
         getters::usdc_raised_per_client(&env, id, user)
+    }
+
+    pub fn eurc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
+        getters::eurc_raised_per_client(&env, id, user)
     }
 
     pub fn predeposits(env: Env, id: u32, user: Address) -> i128 {

@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 #
-# Withdraw the USDC an operation raised since the last withdrawal from the
-# factory to DESTINATION. Admin-only (SOURCE must be the factory admin).
+# Withdraw the USDC and EURC an operation raised since the last withdrawal from
+# the factory to DESTINATION. Admin-only (SOURCE must be the factory admin).
 #
 # Allowed any time after the operation starts, including during the sale, and
-# repeatable: each call sends usdc_raised - usdc_withdrawn_amount.
+# repeatable: each call sends usdc_raised - usdc_withdrawn_amount USDC and
+# eurc_raised - eurc_withdrawn_amount EURC.
 #
 # Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
 #
 # Required env vars:
 #   OP_ID           Operation id (integer).
-#   DESTINATION     Address (G... or C...) receiving the USDC.
+#   DESTINATION     Address (G... or C...) receiving the USDC and EURC.
 #
 # Optional env vars:
 #   DRY_RUN         1 to simulate only (`--send=no`): nothing is submitted.
@@ -41,17 +42,23 @@ view() {
 RAISED="$(view usdc_raised)"
 WITHDRAWN="$(view usdc_withdrawn_amount)"
 PENDING=$((RAISED - WITHDRAWN))
+EURC_RAISED="$(view eurc_raised)"
+EURC_WITHDRAWN="$(view eurc_withdrawn_amount)"
+EURC_PENDING=$((EURC_RAISED - EURC_WITHDRAWN))
 
 echo "==> Network:     $NETWORK" >&2
 echo "==> Factory:     $FACTORY_ID" >&2
 echo "==> Operation:   $OP_ID" >&2
 echo "==> Destination: $DESTINATION" >&2
-echo "==> Raised:      $RAISED (USDC base units)" >&2
+echo "==> USDC raised: $RAISED (USDC base units)" >&2
 echo "==> Withdrawn:   $WITHDRAWN" >&2
 echo "==> Pending:     $PENDING" >&2
+echo "==> EURC raised: $EURC_RAISED (EURC base units)" >&2
+echo "==> Withdrawn:   $EURC_WITHDRAWN" >&2
+echo "==> Pending:     $EURC_PENDING" >&2
 
 # The contract rejects this with NothingToWithdraw; fail before any signing.
-if [ "$PENDING" -le 0 ]; then
+if [ "$PENDING" -le 0 ] && [ "$EURC_PENDING" -le 0 ]; then
   echo "error: nothing to withdraw for operation $OP_ID" >&2
   exit 1
 fi
@@ -69,5 +76,5 @@ stellar contract invoke \
 if [ "$DRY_RUN" = "1" ]; then
   echo "==> Simulated only (DRY_RUN=1); nothing submitted." >&2
 else
-  echo "==> Withdrew $PENDING USDC base units of operation $OP_ID to $DESTINATION" >&2
+  echo "==> Withdrew $PENDING USDC + $EURC_PENDING EURC base units of operation $OP_ID to $DESTINATION" >&2
 fi

@@ -41,8 +41,8 @@ stand-in).
                          │  (operation + funding mgmt)   │
                          │                               │
    investor ── invest ──►│  • verifies backend signature │
-   (USDC) ───────────────│  • prices shares via oracle   │
-                         │  • escrows USDC               │
+   (USDC)   invest_eur ─►│  • prices shares via oracle   │
+   (EURC) ───────────────│  • escrows USDC / EURC        │
                          │  • mints OpLend tokens ───────┼──► OpLend (op #N)
                          │  • deploys 1 OpLend / op      │      restricted token
                          └───────────────┬───────────────┘
@@ -53,8 +53,9 @@ stand-in).
 ```
 
 - The **Factory** is the single entry point for operators and investors. It
-  owns each operation's escrowed USDC and is the **admin** of every `OpLend`
-  token it deploys, so all minting, whitelisting and burning flow through it.
+  owns each operation's escrowed USDC and EURC and is the **admin** of every
+  `OpLend` token it deploys, so all minting, whitelisting and burning flow
+  through it.
 - Each operation gets its own **OpLend** token (one ERC-20-equivalent per
   raise), deployed deterministically by the Factory from an uploaded WASM hash.
 - Investments are authorized off-chain (after KYC) by a **backend signer**; the
@@ -72,8 +73,8 @@ stand-in).
 create_operation ──► [created] ──► start_operation ──► [open] ──► funding fills ──► [finished]
                           │                               │
                           │                               ├─ pause_funding(true/false)
-                          │                               ├─ invest / fiat_invest / gift_op_tokens
-                          │                               └─ withdraw_usdc (any time once started, repeatable)
+                          │                               ├─ invest / invest_eur / fiat_invest / gift_op_tokens
+                          │                               └─ withdraw_usdc (any time once started, repeatable; USDC + EURC)
                           │
                           ├─ set_predeposits(true) ──► predeposit ... ──► (auto-start when filled) ──► claim_op_tokens
                           │
@@ -81,10 +82,11 @@ create_operation ──► [created] ──► start_operation ──► [open] 
 ```
 
 An operation is **finished** when `funding_progress >= total_shares`. Raised
-USDC can be withdrawn any time after the operation starts, including during the
-sale; each `withdraw_usdc` sends what was raised since the previous one. A
-refund that exceeds what the operation still escrows (raised − withdrawn) fails
-with `InsufficientEscrow`, since all operations share one USDC balance.
+funds can be withdrawn any time after the operation starts, including during the
+sale; each `withdraw_usdc` sends what was raised since the previous one, USDC
+and EURC each as themselves. A refund that exceeds what the operation still
+escrows (raised − withdrawn, per token) fails with `InsufficientEscrow`, since
+all operations share one balance per token.
 
 ---
 
@@ -98,20 +100,23 @@ Responsibilities:
 
 - **Operation management**: create, start, pause/resume, open/close
   pre-deposits, and cancel operations.
-- **Investment processing**: `invest` (on-chain USDC), `fiat_invest` (USDC
-  settled off-chain, tokens minted to a holder), `gift_op_tokens` (admin gift),
-  and `predeposit` (commit before an operation officially starts). All
+- **Investment processing**: `invest` (on-chain USDC), `invest_eur` (on-chain
+  EURC, same guards and signature as `invest`), `fiat_invest` (USDC settled
+  off-chain, tokens minted to a holder), `gift_op_tokens` (admin gift), and
+  `predeposit` (commit before an operation officially starts). All
   signature-gated paths verify a backend ed25519 signature and consume a
   single-use nonce.
 - **Claiming**: `claim_op_tokens` / `claim_op_tokens_batch` mint the OpLend
   tokens accumulated through pre-deposits and gifts.
 - **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn OpLend and
-  return escrowed USDC; `withdraw_usdc` releases the raised funds not yet
-  withdrawn, any time after an operation starts.
+  return the escrowed funds in the token each was paid in (USDC, EURC or both);
+  `withdraw_usdc` releases the raised funds not yet withdrawn, in both tokens,
+  any time after an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
   `oplend_whitelist_user`, `oplend_update_backend_signer`, and
   `oplend_admin_burn`.
-- **Pricing helpers**: `get_amount_in` / `get_amount_out` quote shares ↔ USDC.
+- **Pricing helpers**: `get_amount_in` / `get_amount_out` quote shares ↔ USDC;
+  `get_amount_in_eur` quotes the EURC cost of shares.
 
 Key invariants enforced on every invest path (`invest_guards`): operation
 exists, is started, not canceled, not paused, not finished, the caller is not
@@ -202,7 +207,7 @@ Canonical messages (byte-concatenated):
 
 | Call           | Message |
 | -------------- | ------- |
-| `invest` / `predeposit` | `"ONCHAIN_INVEST"` ‖ contract_address ‖ `id` (BE u32) ‖ user ‖ `amount` (BE i128) ‖ `nonce` |
+| `invest` / `invest_eur` / `predeposit` | `"ONCHAIN_INVEST"` ‖ contract_address ‖ `id` (BE u32) ‖ user ‖ `amount` (BE i128) ‖ `nonce` |
 | `fiat_invest`  | `"FIAT_INVEST"` ‖ contract_address ‖ `id` ‖ user ‖ oplend_holder ‖ `amount` ‖ `nonce` |
 | OpLend `whitelist_user` | contract_address ‖ user ‖ `nonce` |
 | OpLendWallet `redeem` | `"OP_REDEEM"` ‖ contract_address ‖ `op_id` (BE u32) ‖ destination ‖ `amount` (BE i128) ‖ `nonce` |
@@ -230,6 +235,10 @@ pub trait OracleInterface {
 
 - `amount_in(eur_per_shares, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
 - `amount_out(eur_per_shares, usdc)` → shares (`SHARE_PRECISION = 1e12`).
+- `eurc_amount_in(eur_per_shares, shares)` → EURC cost. Shares are priced in
+  EUR, so this has no oracle leg.
+- `eurc_to_usdc(eurc)` → the USD value, in USDC base units, that events report
+  for EURC amounts.
 
 `decimals()` is read once — at `initialize`, and again on every
 `update_oracle_address` — and cached in instance storage, so pricing costs a
@@ -256,6 +265,18 @@ was initialized with, so pointing the factory at a USDC with different decimals
 means a fresh deploy, not a setter. Swapping it in place would also invalidate
 every `usdc_raised` already denominated in the old token's units.
 
+EURC follows the same rules. `set_eurc` (admin, write-once, after `initialize`
+or an upgrade) caches its `decimals()`; `invest_eur` reverts with
+`NotInitialized` until it is set. EURC amounts (`eurc_raised`,
+`eurc_raised_per_client`, `eurc_withdrawn_amount`) are in EURC base units.
+In `Invested` and `Refunded`, `usdc_amount` carries the USDC moved plus the USD
+value of the EURC moved. `Invested` converts at the current oracle rate;
+`Refunded` reports the value recorded at invest time, so it nets out the
+matching `Invested` events and a refund never depends on the oracle.
+`FundingWithdrawn` does no conversion: `usdc_amount` is the USDC sent and
+`eurc_amount` the EURC sent, in EURC base units, so a withdrawal never depends
+on the oracle either.
+
 The Reflector feed reports **14** decimals (verified on both networks) and
 `scale_to_6` normalizes it; the residual truncation is ~5e-7 USD per EUR.
 
@@ -276,10 +297,17 @@ touch a dozen entries.
 | `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / predeposits-open / withdrawn bits in one `u32` | 8 separate per-operation keys |
 | `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
 | `Position(id, user)` | USDC invested, predeposited shares, gifted shares | 3 separate per-(op, user) keys |
+| `EurcEscrow(id)` | EURC raised and EURC withdrawn — only exists once an operation takes EURC | (new) |
+| `EurcPosition(id, user)` | EURC invested and its invest-time USD value | (new) |
 | `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
 
 `Operation` — the struct returned by `operations` / `get_operation` — is
 unchanged; it is assembled on read from `Op(id)` + `OpName(id)`.
+
+Stored `contracttype` structs decode by field name, so a field added to `Op` or
+`Position` would make every already-stored entry unreadable after an upgrade.
+New per-operation or per-position state therefore gets its own key
+(`UsdcWithdrawn`, `EurcEscrow`, `EurcPosition`), appended to `DataKey`.
 
 Every state-changing entry point extends the instance TTL, and writes to
 per-operation, per-position, merkle-root and claim entries extend theirs. Used
@@ -305,6 +333,7 @@ the generated `try_*` client methods.
 // Setup
 fn initialize(admin, usdc, oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>)
 fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
+fn set_eurc(eurc) // admin; write-once
 
 // Operations
 fn create_operation(op_name: String, total_shares: i128, eur_per_shares: i128) -> Address
@@ -315,18 +344,20 @@ fn set_predeposits(id: u32, state: bool)
 
 // Invest
 fn invest(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
+fn invest_eur(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
 fn fiat_invest(id: u32, shares_amount: i128, user, oplend_holder, nonce: String, signature: BytesN<64>)
 fn gift_op_tokens(id: u32, shares_amount: i128, user)
 fn predeposit(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
 fn claim_op_tokens(id: u32, user)
 fn claim_op_tokens_batch(id: u32, users: Vec<Address>)
 fn get_amount_in(id: u32, shares_amount: i128) -> i128
+fn get_amount_in_eur(id: u32, shares_amount: i128) -> i128
 fn get_amount_out(id: u32, usdc_amount: i128) -> i128
 
 // Admin
 fn refund_user(id: u32, user)
 fn batch_refund_users(id: u32, users: Vec<Address>, len: u32)
-fn withdraw_usdc(id: u32, destination)
+fn withdraw_usdc(id: u32, destination) // sends pending USDC and EURC
 fn update_oracle_address(new_oracle)
 fn update_backend_signer(new_signer: BytesN<32>)
 fn blacklist(user, state: bool)
@@ -346,13 +377,17 @@ fn operation_started(id) -> bool
 fn operation_canceled(id) -> bool
 fn usdc_withdrawn(id) -> bool
 fn usdc_withdrawn_amount(id) -> i128
+fn eurc_raised(id) -> i128
+fn eurc_withdrawn_amount(id) -> i128
 fn predeposits_open(id) -> bool
 fn usdc_raised_per_client(id, user) -> i128
+fn eurc_raised_per_client(id, user) -> i128
 fn predeposits(id, user) -> i128
 fn gifted(id, user) -> i128
 fn claimable_total(id, user) -> i128
 fn blacklisted(user) -> bool
 fn usdc() -> Address
+fn eurc() -> Address
 ```
 
 ### OpLend token (`OpLendToken`)
@@ -448,15 +483,16 @@ Tests run against the Soroban test host (no network needed) and cover:
 
 - **Operation lifecycle** — create, start, pause/resume, pre-deposit toggling,
   cancellation, finish detection.
-- **Investment flow** — `invest`, `fiat_invest`, gifting, share-cap enforcement,
-  blacklist/guard rejections.
+- **Investment flow** — `invest`, `invest_eur`, `fiat_invest`, gifting,
+  share-cap enforcement, blacklist/guard rejections.
 - **Backend signature verification** — valid signatures accepted, tampered
   signatures and replayed nonces rejected.
 - **Pre-deposit + claim** — committing before start, auto-start on fill,
   claiming accumulated tokens (single + batch).
-- **Cancellation + refund** — single and batch refunds restore USDC and burn
-  OpLend.
-- **Fund withdrawal** — only after finish, only once.
+- **Cancellation + refund** — single and batch refunds restore USDC and EURC
+  (each as paid, mixed positions included) and burn OpLend.
+- **Fund withdrawal** — incremental, per token, never past what an operation
+  still escrows.
 - **OpLend token** — minting, supply-cap enforcement, transfer restrictions,
   whitelist (admin + signature) and blacklist behavior.
 - **Oracle pricing** — via a mock oracle implementing the SEP-40 interface.

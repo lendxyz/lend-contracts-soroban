@@ -4,67 +4,109 @@ use crate::errors::Error;
 use crate::events;
 use crate::oracle::set_oracle;
 use crate::storage as st;
-use crate::types::{DataKey, OpData, OpLendClient, F_STARTED, F_WITHDRAWN};
+use crate::types::{
+    DataKey, EurcEscrow, EurcPosition, OpData, OpLendClient, F_STARTED,
+    F_WITHDRAWN,
+};
 
-fn refund_one(
-    e: &Env,
+/// One operation's escrow (USDC and EURC), read once and written once per
+/// refund call however many users it covers.
+struct Refunds<'a> {
     id: u32,
-    op: &mut OpData,
-    oplend: &OpLendClient,
-    usdc: &token::Client,
-    user: Address,
-    withdrawn: i128,
-) {
-    let mut pos = st::read_position(e, id, &user);
-    let invested = pos.invested;
-    let oplend_balance = oplend.balance(&user);
+    op: OpData,
+    usdc_withdrawn: i128,
+    eurc: EurcEscrow,
+    eurc_raised_before: i128,
+    oplend: OpLendClient<'a>,
+    usdc: token::Client<'a>,
+}
 
-    if invested == 0 {
-        panic_with_error!(e, Error::NoParticipation);
-    }
-    if oplend_balance == 0 {
-        panic_with_error!(e, Error::NoOpLendBalance);
-    }
-    // USDC of every operation sits in one balance: refunding more than this
-    // operation still holds would pay out another operation's escrow.
-    if invested > op.usdc_raised - withdrawn {
-        panic_with_error!(e, Error::InsufficientEscrow);
+impl<'a> Refunds<'a> {
+    fn load(e: &'a Env, id: u32) -> Self {
+        let op = st::read_op(e, id);
+        let eurc = st::read_eurc_escrow(e, id);
+        Refunds {
+            id,
+            usdc_withdrawn: st::read_usdc_withdrawn(e, id, &op),
+            eurc_raised_before: eurc.raised,
+            eurc,
+            oplend: OpLendClient::new(e, &op.op_token),
+            usdc: st::usdc_client(e),
+            op,
+        }
     }
 
-    op.funding_progress -= oplend_balance;
-    op.usdc_raised -= invested;
-    pos.invested = 0;
-    st::write_position(e, id, &user, &pos);
+    /// Burns the user's op-lend and returns everything they paid in, in the
+    /// token they paid it in: USDC from `invest`/`predeposit`/`gift_op_tokens`,
+    /// EURC from `invest_eur`, or both.
+    fn refund(&mut self, e: &Env, user: Address) {
+        let id = self.id;
+        let mut pos = st::read_position(e, id, &user);
+        let eurc_pos = st::read_eurc_position(e, id, &user);
+        let invested = pos.invested;
+        let eurc_invested = eurc_pos.invested;
+        let oplend_balance = self.oplend.balance(&user);
 
-    oplend.admin_burn(&user, &oplend_balance);
-    usdc.transfer(&e.current_contract_address(), &user, &invested);
+        if invested == 0 && eurc_invested == 0 {
+            panic_with_error!(e, Error::NoParticipation);
+        }
+        if oplend_balance == 0 {
+            panic_with_error!(e, Error::NoOpLendBalance);
+        }
+        // Each token of every operation sits in one balance: refunding more
+        // than this operation still holds would pay out another operation's
+        // escrow.
+        if invested > self.op.usdc_raised - self.usdc_withdrawn
+            || eurc_invested > self.eurc.raised - self.eurc.withdrawn
+        {
+            panic_with_error!(e, Error::InsufficientEscrow);
+        }
 
-    events::Refunded {
-        investor: user,
-        operation_id: id,
-        usdc_amount: invested,
-        shares_refunded: oplend_balance,
+        self.op.funding_progress -= oplend_balance;
+        self.op.usdc_raised -= invested;
+        self.eurc.raised -= eurc_invested;
+        if invested > 0 {
+            pos.invested = 0;
+            st::write_position(e, id, &user, &pos);
+        }
+        if eurc_invested > 0 {
+            st::write_eurc_position(e, id, &user, &EurcPosition::ZERO);
+        }
+
+        self.oplend.admin_burn(&user, &oplend_balance);
+        let this = e.current_contract_address();
+        if invested > 0 {
+            self.usdc.transfer(&this, &user, &invested);
+        }
+        if eurc_invested > 0 {
+            st::eurc_client(e).transfer(&this, &user, &eurc_invested);
+        }
+
+        events::Refunded {
+            investor: user,
+            operation_id: id,
+            // EURC counts at the USD value its `Invested` events reported.
+            usdc_amount: invested + eurc_pos.invested_usd,
+            shares_refunded: oplend_balance,
+        }
+        .publish(e);
     }
-    .publish(e);
+
+    fn store(&self, e: &Env) {
+        st::write_op(e, self.id, &self.op);
+        if self.eurc.raised != self.eurc_raised_before {
+            st::write_eurc_escrow(e, self.id, &self.eurc);
+        }
+    }
 }
 
 pub fn refund_user(e: &Env, id: u32, user: Address) {
     st::require_admin(e);
     st::bump_instance(e);
 
-    let mut op = st::read_op(e, id);
-    let oplend = OpLendClient::new(e, &op.op_token);
-    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
-    refund_one(
-        e,
-        id,
-        &mut op,
-        &oplend,
-        &st::usdc_client(e),
-        user,
-        withdrawn,
-    );
-    st::write_op(e, id, &op);
+    let mut refunds = Refunds::load(e, id);
+    refunds.refund(e, user);
+    refunds.store(e);
 }
 
 pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>, len: u32) {
@@ -74,14 +116,11 @@ pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>, len: u32) {
         panic_with_error!(e, Error::InvalidBatchLen);
     }
 
-    let mut op = st::read_op(e, id);
-    let oplend = OpLendClient::new(e, &op.op_token);
-    let usdc = st::usdc_client(e);
-    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
+    let mut refunds = Refunds::load(e, id);
     for user in users.iter().take(len as usize) {
-        refund_one(e, id, &mut op, &oplend, &usdc, user, withdrawn);
+        refunds.refund(e, user);
     }
-    st::write_op(e, id, &op);
+    refunds.store(e);
 }
 
 pub fn update_oracle_address(e: &Env, new_oracle: Address) {
@@ -138,6 +177,9 @@ pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
     OpLendClient::new(e, &op.op_token).admin_burn(&user, &value);
 }
 
+/// Sends everything operation `id` raised since the previous withdrawal, in
+/// both tokens: USDC and EURC each go to `destination` as themselves, and
+/// `FundingWithdrawn` reports each amount in its own token's base units.
 pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     st::require_admin(e);
     st::bump_instance(e);
@@ -148,27 +190,43 @@ pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     }
     let withdrawn = st::read_usdc_withdrawn(e, id, &op);
     let amount = op.usdc_raised - withdrawn;
-    if amount <= 0 {
+    let mut eurc = st::read_eurc_escrow(e, id);
+    let eurc_amount = eurc.raised - eurc.withdrawn;
+    if amount <= 0 && eurc_amount <= 0 {
         panic_with_error!(e, Error::NothingToWithdraw);
     }
 
-    st::write_usdc_withdrawn(e, id, op.usdc_raised);
-    if !op.flag(F_WITHDRAWN) {
-        op.set_flag(F_WITHDRAWN, true);
-        st::write_op(e, id, &op);
+    let this = e.current_contract_address();
+
+    // `F_WITHDRAWN` stays tied to USDC: set without a `UsdcWithdrawn` entry it
+    // reads as "all USDC taken", so an EURC-only withdrawal must not touch it.
+    if amount > 0 {
+        st::write_usdc_withdrawn(e, id, op.usdc_raised);
+        if !op.flag(F_WITHDRAWN) {
+            op.set_flag(F_WITHDRAWN, true);
+            st::write_op(e, id, &op);
+        }
+        st::usdc_client(e).transfer(&this, &destination, &amount);
     }
 
-    st::usdc_client(e).transfer(
-        &e.current_contract_address(),
-        &destination,
-        &amount,
-    );
+    if eurc_amount > 0 {
+        eurc.withdrawn = eurc.raised;
+        st::write_eurc_escrow(e, id, &eurc);
+        st::eurc_client(e).transfer(&this, &destination, &eurc_amount);
+    }
 
     events::FundingWithdrawn {
         operation_id: id,
-        usdc_amount: amount,
+        usdc_amount: amount.max(0),
+        eurc_amount: eurc_amount.max(0),
     }
     .publish(e);
+}
+
+pub fn set_eurc(e: &Env, eurc: Address) {
+    st::require_admin(e);
+    st::bump_instance(e);
+    st::set_eurc(e, &eurc);
 }
 
 pub fn transfer_ownership(e: &Env, new_admin: Address) {

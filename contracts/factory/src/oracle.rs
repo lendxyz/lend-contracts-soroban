@@ -119,3 +119,34 @@ pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
         shares
     }
 }
+
+fn eurc_precision(e: &Env) -> i128 {
+    10i128.pow(st::eurc_decimals(e))
+}
+
+/// EURC cost for `shares_amount` shares of operation priced at
+/// `eur_per_shares`, in EURC base units. Shares are priced in EUR, so unlike
+/// [`amount_in`] there is no oracle leg.
+pub fn eurc_amount_in(
+    e: &Env,
+    eur_per_shares: i128,
+    shares_amount: i128,
+) -> i128 {
+    if shares_amount <= 0 {
+        panic_with_error!(e, Error::InvalidShares);
+    }
+    let shares_price_eur = eur_per_shares * shares_amount / PRICE_PRECISION;
+    let eurc_cost = shares_price_eur * eurc_precision(e) / PRICE_PRECISION;
+    if eurc_cost <= 0 {
+        1
+    } else {
+        eurc_cost
+    }
+}
+
+/// USD value of `eurc_amount` EURC base units at the current oracle rate, in
+/// USDC base units: what the `usdc_amount` of an event reports for EURC.
+pub fn eurc_to_usdc(e: &Env, eurc_amount: i128) -> i128 {
+    eurc_amount * get_eur_usd_price(e) * usdc_precision(e)
+        / (eurc_precision(e) * PRICE_PRECISION)
+}

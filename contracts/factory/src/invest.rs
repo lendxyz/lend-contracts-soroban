@@ -6,7 +6,7 @@ use crate::crypto::{
 };
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::{amount_in, amount_out};
+use crate::oracle::{amount_in, amount_out, eurc_amount_in, eurc_to_usdc};
 use crate::storage as st;
 use crate::types::{
     OpData, OpLendClient, F_CANCELED, F_PAUSED, F_PREDEPOSITS, F_STARTED,
@@ -85,6 +85,57 @@ pub fn invest(
         investor: user.clone(),
         operation_id: id,
         usdc_amount: cost,
+        shares_bought: shares_amount,
+    }
+    .publish(e);
+
+    OpLendClient::new(e, &op.op_token).mint(&user, &shares_amount);
+    maybe_finish(e, id, &op);
+}
+
+pub fn invest_eur(
+    e: &Env,
+    user: Address,
+    id: u32,
+    shares_amount: i128,
+    nonce: String,
+    signature: BytesN<64>,
+) {
+    user.require_auth();
+    st::bump_instance(e);
+    st::require_not_blacklisted(e, &user);
+
+    let mut op = load_open(e, id);
+    if !op.flag(F_STARTED) {
+        panic_with_error!(e, Error::OperationNotStarted);
+    }
+    check_fundable(e, &op, shares_amount);
+
+    let cost = eurc_amount_in(e, op.eur_per_shares, shares_amount);
+    let cost_usd = eurc_to_usdc(e, cost);
+
+    let msg = build_invest_message(e, id, &user, shares_amount, &nonce);
+    verify_backend_sig(e, &st::read_backend_signer(e), &msg, &signature);
+    consume_nonce(e, &nonce);
+
+    op.funding_progress += shares_amount;
+    st::write_op(e, id, &op);
+
+    let mut escrow = st::read_eurc_escrow(e, id);
+    escrow.raised += cost;
+    st::write_eurc_escrow(e, id, &escrow);
+
+    let mut pos = st::read_eurc_position(e, id, &user);
+    pos.invested += cost;
+    pos.invested_usd += cost_usd;
+    st::write_eurc_position(e, id, &user, &pos);
+
+    st::eurc_client(e).transfer(&user, e.current_contract_address(), &cost);
+
+    events::Invested {
+        investor: user.clone(),
+        operation_id: id,
+        usdc_amount: cost_usd,
         shares_bought: shares_amount,
     }
     .publish(e);
@@ -315,6 +366,10 @@ pub fn claim_op_tokens_batch(e: &Env, id: u32, users: Vec<Address>) {
 
 pub fn get_amount_in(e: &Env, id: u32, shares_amount: i128) -> i128 {
     amount_in(e, st::read_op(e, id).eur_per_shares, shares_amount)
+}
+
+pub fn get_amount_in_eur(e: &Env, id: u32, shares_amount: i128) -> i128 {
+    eurc_amount_in(e, st::read_op(e, id).eur_per_shares, shares_amount)
 }
 
 pub fn get_amount_out(e: &Env, id: u32, usdc_amount: i128) -> i128 {

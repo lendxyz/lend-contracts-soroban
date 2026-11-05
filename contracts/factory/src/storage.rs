@@ -1,7 +1,9 @@
 use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
 use crate::errors::Error;
-use crate::types::{DataKey, OpData, Position, F_WITHDRAWN};
+use crate::types::{
+    DataKey, EurcEscrow, EurcPosition, OpData, Position, F_WITHDRAWN,
+};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 
@@ -62,6 +64,37 @@ pub fn usdc_decimals(e: &Env) -> u32 {
 
 pub fn usdc_client(e: &Env) -> token::Client<'_> {
     token::Client::new(e, &read_usdc(e))
+}
+
+pub fn read_eurc(e: &Env) -> Address {
+    match e.storage().instance().get(&DataKey::Eurc) {
+        Some(eurc) => eurc,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
+}
+
+/// Stores the EURC token and caches its `decimals()`. Write-once, like
+/// `DataKey::Usdc`: every EURC amount in storage is denominated in this token's
+/// units, so swapping it would strand the existing escrow.
+pub fn set_eurc(e: &Env, eurc: &Address) {
+    let instance = e.storage().instance();
+    if instance.has(&DataKey::Eurc) {
+        panic_with_error!(e, Error::AlreadyInitialized);
+    }
+    let decimals = token::Client::new(e, eurc).decimals();
+    instance.set(&DataKey::Eurc, eurc);
+    instance.set(&DataKey::EurcDecimals, &decimals);
+}
+
+pub fn eurc_decimals(e: &Env) -> u32 {
+    match e.storage().instance().get(&DataKey::EurcDecimals) {
+        Some(decimals) => decimals,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
+}
+
+pub fn eurc_client(e: &Env) -> token::Client<'_> {
+    token::Client::new(e, &read_eurc(e))
 }
 
 pub fn read_backend_signer(e: &Env) -> BytesN<32> {
@@ -139,6 +172,21 @@ pub fn write_usdc_withdrawn(e: &Env, id: u32, amount: i128) {
         .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
+pub fn read_eurc_escrow(e: &Env, id: u32) -> EurcEscrow {
+    e.storage()
+        .persistent()
+        .get(&DataKey::EurcEscrow(id))
+        .unwrap_or(EurcEscrow::ZERO)
+}
+
+pub fn write_eurc_escrow(e: &Env, id: u32, escrow: &EurcEscrow) {
+    let key = DataKey::EurcEscrow(id);
+    e.storage().persistent().set(&key, escrow);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
+}
+
 // --- positions ---
 
 pub fn read_position(e: &Env, id: u32, user: &Address) -> Position {
@@ -150,6 +198,26 @@ pub fn read_position(e: &Env, id: u32, user: &Address) -> Position {
 
 pub fn write_position(e: &Env, id: u32, user: &Address, pos: &Position) {
     let key = DataKey::Position(id, user.clone());
+    e.storage().persistent().set(&key, pos);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
+}
+
+pub fn read_eurc_position(e: &Env, id: u32, user: &Address) -> EurcPosition {
+    e.storage()
+        .persistent()
+        .get(&DataKey::EurcPosition(id, user.clone()))
+        .unwrap_or(EurcPosition::ZERO)
+}
+
+pub fn write_eurc_position(
+    e: &Env,
+    id: u32,
+    user: &Address,
+    pos: &EurcPosition,
+) {
+    let key = DataKey::EurcPosition(id, user.clone());
     e.storage().persistent().set(&key, pos);
     e.storage()
         .persistent()

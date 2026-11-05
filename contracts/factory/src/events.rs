@@ -117,4 +117,5 @@ pub struct FundingWithdrawn {
     #[topic]
     pub operation_id: u32,
     pub usdc_amount: i128,
+    pub eurc_amount: i128,
 }

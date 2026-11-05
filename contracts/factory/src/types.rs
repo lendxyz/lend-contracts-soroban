@@ -27,8 +27,6 @@ pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
 pub const F_PREDEPOSITS: u32 = 1 << 3;
-/// Set on the first `withdraw_usdc`; the amount lives under
-/// `DataKey::UsdcWithdrawn`.
 pub const F_WITHDRAWN: u32 = 1 << 4;
 
 /// Everything a funding path needs, in a single ledger entry.
@@ -101,6 +99,45 @@ impl Position {
     }
 }
 
+/// EURC side of an operation's escrow, raised by `invest_eur`. Kept out of
+/// [`OpData`] (adding a field there would make every stored `Op` undecodable)
+/// and absent for operations that never took EURC.
+#[contracttype(export = false)]
+#[derive(Clone)]
+pub struct EurcEscrow {
+    /// EURC paid in, net of refunds, in EURC base units.
+    pub raised: i128,
+    /// Cumulative EURC sent out by `withdraw_usdc`.
+    pub withdrawn: i128,
+}
+
+impl EurcEscrow {
+    pub const ZERO: EurcEscrow = EurcEscrow {
+        raised: 0,
+        withdrawn: 0,
+    };
+}
+
+/// EURC side of a [`Position`], kept apart for the same layout reason.
+#[contracttype(export = false)]
+#[derive(Clone)]
+pub struct EurcPosition {
+    /// EURC paid in by this user, in EURC base units.
+    pub invested: i128,
+    /// USD value of `invested` at invest time, in USDC base units: the sum of
+    /// the `usdc_amount` of this user's EURC `Invested` events. A refund
+    /// reports it back, so indexers net to zero and refunds never depend on
+    /// the oracle.
+    pub invested_usd: i128,
+}
+
+impl EurcPosition {
+    pub const ZERO: EurcPosition = EurcPosition {
+        invested: 0,
+        invested_usd: 0,
+    };
+}
+
 #[contracttype(export = false)]
 pub enum DataKey {
     Admin,
@@ -120,4 +157,10 @@ pub enum DataKey {
     /// because adding a field there would make every already-stored `Op`
     /// entry undecodable. New variants MUST be appended, never reordered.
     UsdcWithdrawn(u32),
+    /// EURC token address, set once by `set_eurc`.
+    Eurc,
+    /// Cached EURC `decimals()`.
+    EurcDecimals,
+    EurcEscrow(u32),
+    EurcPosition(u32, Address),
 }
