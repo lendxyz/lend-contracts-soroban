@@ -4,7 +4,7 @@ extern crate std;
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Events as _, Ledger as _},
+    testutils::{Address as _, Deployer as _, Events as _, Ledger as _},
     token::StellarAssetClient,
     Address, Bytes, BytesN, Env, Event as _, String,
 };
@@ -475,6 +475,29 @@ fn test_oplend_upgrade_swaps_code_and_future_deploys() {
     assert_eq!(s.factory.oplend_wasm_hash(), new_hash);
     // Same id, other code: the wallet wasm has no `total_supply`.
     assert!(op_token.try_total_supply().is_err());
+    // The TTL bump runs after the swap, so the new code is as long-lived as
+    // the token instance instead of keeping its short upload TTL.
+    let d = s.e.deployer();
+    assert_eq!(
+        d.get_contract_code_ttl(&op_addr),
+        d.get_contract_instance_ttl(&op_addr)
+    );
+}
+
+/// AUDIT Factory C19: the TTL extension in `upgrade` runs after the swap.
+/// Instance TTL extension also covers the code entry, so the *new* wasm must
+/// come out as long-lived as the instance, not keep its short upload TTL.
+#[test]
+fn test_upgrade_extends_the_new_code_ttl() {
+    let s = setup();
+    let new_hash = s.e.deployer().upload_contract_wasm(OTHER_WASM);
+    s.factory.upgrade(&new_hash);
+
+    let d = s.e.deployer();
+    assert_eq!(
+        d.get_contract_code_ttl(&s.factory_id),
+        d.get_contract_instance_ttl(&s.factory_id)
+    );
 }
 
 #[test]

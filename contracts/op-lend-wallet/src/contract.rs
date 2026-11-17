@@ -127,8 +127,10 @@ impl OpLendWallet {
 
     pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
         st::require_admin(&e);
-        st::bump_instance(&e);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
+        // After the swap: instance TTL extension also covers the code entry,
+        // so this keeps the *new* wasm alive, not the one just replaced.
+        st::bump_instance(&e);
     }
 
     // --- Admin: redeem ---

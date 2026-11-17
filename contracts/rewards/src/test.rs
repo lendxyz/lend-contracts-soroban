@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use soroban_sdk::{
-    testutils::Address as _, token::StellarAssetClient, vec, Address, Bytes,
-    BytesN, Env, Vec,
+    testutils::{Address as _, Deployer as _},
+    token::StellarAssetClient,
+    vec, Address, Bytes, BytesN, Env, Vec,
 };
 
 use crate::contract::{LendRewards, LendRewardsClient};
@@ -70,6 +71,26 @@ fn tree2(
     let l1 = merkle::leaf(e, u1, b1);
     let root = pair(e, &l0, &l1);
     (root, vec![e, l1.clone()], vec![e, l0.clone()])
+}
+
+/// Any other wasm, as an upgrade target.
+const OTHER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/release/lend_wallet.wasm");
+
+/// `upgrade` extends the TTL after the swap: instance TTL extension also covers
+/// the code entry, so the *new* wasm is bumped along with the instance.
+#[test]
+fn test_upgrade_extends_the_new_code_ttl() {
+    let s = setup();
+    let d = s.e.deployer();
+    let before = d.get_contract_instance_ttl(&s.rewards_id);
+
+    let new_hash = d.upload_contract_wasm(OTHER_WASM);
+    s.rewards.upgrade(&new_hash);
+
+    let code_ttl = d.get_contract_code_ttl(&s.rewards_id);
+    assert!(code_ttl > before);
+    assert_eq!(code_ttl, d.get_contract_instance_ttl(&s.rewards_id));
 }
 
 #[test]

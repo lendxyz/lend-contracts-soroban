@@ -1,6 +1,13 @@
 # Audit notes
 
-Here will be the changelog after audit recommendations fixes
+Here is the changelog after audit recommendations fixes
+
+# Upgrade path:
+
+- `Factory` and `OpLend` will be redeployed on a fresh instance
+- `Rewards` and `OpLendWallet` will be upgraded
+
+# Changelog:
 
 ## `void_nonce` on factory, op-lend and op-lend-wallet
 
@@ -108,3 +115,17 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   both the token's live code and the factory's stored hash.
 - Tokens created by the old factory run op-lend code without `upgrade()` and
   stay frozen; only operations from the fresh deployment can be upgraded.
+
+## `upgrade` extends the TTL of the new code, not the replaced one
+
+> Addresses **Factory C19** and **OpLendWallet C6**
+
+- `instance().extend_ttl` extends both the contract instance and its code
+  entry. `upgrade` called it *before* `update_current_contract_wasm`, so it
+  kept the outgoing wasm alive and left the incoming one on its upload TTL.
+- The factory and wallet `upgrade` now swap the code first, then bump.
+- Same fix applied where no ticket covers it: op-lend `upgrade` (its
+  `require_admin` bumps before the swap, so it bumps again after) and rewards
+  `upgrade` (which did not bump at all).
+- Regression tests in all four crates check that after an upgrade the code's
+  TTL matches the instance's; they fail with the old order.

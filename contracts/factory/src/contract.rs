@@ -193,8 +193,10 @@ impl LendFactory {
     /// `UsdcDecimals` fallback in `storage::usdc_decimals`.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         st::require_admin(&env);
-        st::bump_instance(&env);
         env.deployer().update_current_contract_wasm(new_wasm_hash);
+        // After the swap: instance TTL extension also covers the code entry,
+        // so this keeps the *new* wasm alive, not the one just replaced.
+        st::bump_instance(&env);
     }
 
     // --- Getters ---

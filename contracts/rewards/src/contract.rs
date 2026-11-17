@@ -200,6 +200,9 @@ impl LendRewards {
     pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
         require_admin(&e);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
+        // After the swap: instance TTL extension also covers the code entry,
+        // so this keeps the *new* wasm alive.
+        bump_instance(&e);
     }
 
     // ********** Read **********

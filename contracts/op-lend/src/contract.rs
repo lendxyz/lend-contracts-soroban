@@ -210,6 +210,9 @@ impl OpLendToken {
     pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
         require_admin(&e);
         e.deployer().update_current_contract_wasm(new_wasm_hash);
+        // `require_admin` already bumped, but before the swap. Instance TTL
+        // extension also covers the code entry, so bump again for the new wasm.
+        bump_instance(&e);
     }
 
     pub fn get_allowance(

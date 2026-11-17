@@ -3,7 +3,8 @@ extern crate std;
 
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
-    testutils::Address as _, vec, Address, Bytes, BytesN, Env, String, Vec,
+    testutils::{Address as _, Deployer as _},
+    vec, Address, Bytes, BytesN, Env, String, Vec,
 };
 
 use crate::contract::{OpLendWallet, OpLendWalletClient};
@@ -548,4 +549,20 @@ fn test_upgrade_replaces_the_executable() {
     // State survived, but the code behind it is an op-lend token now, which
     // has no `op_lend_balance`.
     assert!(s.wallet.try_op_lend_balance(&OP_ID).is_err());
+}
+
+/// AUDIT OpLendWallet C6: the TTL extension in `upgrade` runs after the swap.
+/// Instance TTL extension also covers the code entry, so the *new* wasm must
+/// come out as long-lived as the instance, not keep its short upload TTL.
+#[test]
+fn test_upgrade_extends_the_new_code_ttl() {
+    let s = setup();
+    let other_wasm = s.e.deployer().upload_contract_wasm(oplend::WASM);
+    s.wallet.upgrade(&other_wasm);
+
+    let d = s.e.deployer();
+    assert_eq!(
+        d.get_contract_code_ttl(&s.wallet_id),
+        d.get_contract_instance_ttl(&s.wallet_id)
+    );
 }
