@@ -69,6 +69,12 @@ fn settle_claim(
     balance: i128,
     proof: &Vec<BytesN<32>>,
 ) {
+    // A zero or negative entry is an admin mistake in the tree. Claimed in a
+    // batch it would be subtracted from the user's other epochs, which would
+    // then be marked claimed for good; refusing it here covers both paths.
+    if balance <= 0 {
+        panic_with_error!(e, Error::InvalidClaimBalance);
+    }
     if !verify(e, op_id, user, epoch, balance, proof) {
         panic_with_error!(e, Error::InvalidProof);
     }
@@ -241,10 +247,6 @@ impl LendRewards {
         claimed_balance: i128,
         merkle_proof: Vec<BytesN<32>>,
     ) {
-        if claimed_balance <= 0 {
-            panic_with_error!(&e, Error::InvalidClaimBalance);
-        }
-
         bump_instance(&e);
 
         if is_claimed(&e, op_id, epoch, &user) {

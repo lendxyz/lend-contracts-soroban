@@ -367,3 +367,15 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   already fails on the network's resource limits (the event limit alone stops
   it near 105 entries). `MAX_BATCH`, its check and error `BatchTooLarge` (7,
   code not reused) are removed; an empty list is still refused (`EmptyBatch`).
+
+## Rewards: batch claims refuse a non-positive epoch
+
+> Addresses **Rewards C1**
+
+- `claim_op_epochs` never checked the sign of each epoch's amount: a negative
+  entry (an admin mistake in a tree) was netted against the user's other
+  epochs, which were then marked claimed, losing the difference for good.
+- The check (`InvalidClaimBalance` for zero or negative) now lives in the
+  shared `settle_claim`, so it applies to every epoch of a batch and to
+  `claim_op_epoch` alike; one bad entry rejects the whole batch before
+  anything is marked claimed or paid.

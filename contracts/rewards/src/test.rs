@@ -206,6 +206,50 @@ fn test_claim_multiple_op_epochs() {
     assert!(s.rewards.op_claimed(&OP_ID, &3, &u0));
 }
 
+/// AUDIT Rewards C1: a negative entry in one epoch rejects the whole batch
+/// instead of being netted against the others, which stay claimable.
+#[test]
+fn test_claim_op_epochs_rejects_a_negative_epoch() {
+    let s = setup();
+    let alice = Address::generate(&s.e);
+    let bob = Address::generate(&s.e);
+    let usdc = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    s.usdc.mint(&s.admin, &1_000);
+
+    // Alice: 100 in epoch 1, 50 in epoch 2, -80 in epoch 3 (the mistake).
+    let mut claims = Vec::new(&s.e);
+    for (epoch, balance) in [(1u32, 100i128), (2, 50), (3, -80)] {
+        let (root, proof, _) = tree2(&s.e, &alice, balance, &bob, 10);
+        s.rewards.distribute_op_rewards(&OP_ID, &epoch, &root, &110);
+        claims.push_back(ClaimData {
+            epoch,
+            balance,
+            merkle_proof: proof,
+        });
+    }
+
+    assert_eq!(
+        s.rewards.try_claim_op_epochs(&OP_ID, &alice, &claims),
+        Err(Ok(Error::InvalidClaimBalance.into()))
+    );
+    assert_eq!(usdc.balance(&alice), 0);
+    assert!(!s.rewards.op_claimed(&OP_ID, &1, &alice));
+    assert!(!s.rewards.op_claimed(&OP_ID, &2, &alice));
+
+    // Without the bad epoch she gets the full 150.
+    claims.pop_back();
+    s.rewards.claim_op_epochs(&OP_ID, &alice, &claims);
+    assert_eq!(usdc.balance(&alice), 150);
+
+    // The single-epoch path refuses it too.
+    let (_, proof, _) = tree2(&s.e, &alice, -80, &bob, 10);
+    assert_eq!(
+        s.rewards
+            .try_claim_op_epoch(&OP_ID, &alice, &3, &-80, &proof),
+        Err(Ok(Error::InvalidClaimBalance.into()))
+    );
+}
+
 #[test]
 fn test_verify_helpers() {
     let s = setup();
