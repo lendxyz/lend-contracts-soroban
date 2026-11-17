@@ -122,7 +122,7 @@ blacklisted, `shares_amount > 0`, and the new total does not exceed
 
 [`contracts/op-lend`](contracts/op-lend) — `OpLendToken`.
 
-A SEP-41 token (the standard Soroban `TokenInterface`) with three additions that
+A SEP-41 token (the standard Soroban `TokenInterface`) with these additions that
 enforce the legal framework for tokenized securities:
 
 - **Transfer restrictions** — `transfer` and `transfer_from` require **both**
@@ -131,8 +131,10 @@ enforce the legal framework for tokenized securities:
   `whitelist_user` (anyone, given a valid backend signature + unused nonce), and
   automatic whitelisting of mint recipients. Minting whitelists `to`.
 - **Capped supply** — `mint` panics if `total_supply + amount > max_supply`.
-- **Admin controls** — `admin_burn` (burn from any holder, no allowance),
-  `set_admin`, `update_backend_signer`.
+- **Admin-only burning** — `burn(from, amount)` takes the admin's auth instead
+  of the holder's (burn from any holder, no allowance); `burn_from` rejects any
+  spender but the admin (`NotAdmin`).
+- **Admin controls** — `set_admin`, `update_backend_signer`.
 
 Constructor parameters: `admin`, `decimal` (≤ 6), `name`, `symbol`,
 `max_supply`, `backend_signer`. In production the Factory is the `admin` and the
@@ -366,15 +368,14 @@ fn approve(from, spender, amount: i128, expiration_ledger: u32)
 fn balance(id) -> i128
 fn transfer(from, to: MuxedAddress, amount: i128)          // both parties must be whitelisted
 fn transfer_from(spender, from, to, amount: i128)          // both parties must be whitelisted
-fn burn(from, amount: i128)
-fn burn_from(spender, from, amount: i128)
+fn burn(from, amount: i128)                                // admin; no holder auth or allowance
+fn burn_from(spender, from, amount: i128)                  // spender must be the admin; spends allowance
 fn decimals() -> u32
 fn name() -> String
 fn symbol() -> String
 
 // Extensions
 fn mint(to, amount: i128)                                  // admin; caps at max_supply; whitelists `to`
-fn admin_burn(user, amount: i128)                          // admin; no allowance needed
 fn whitelist_user_admin(user, state: bool)                 // admin
 fn whitelist_user(user, nonce: String, signature: BytesN<64>)
 fn update_backend_signer(new_signer: BytesN<32>)           // admin

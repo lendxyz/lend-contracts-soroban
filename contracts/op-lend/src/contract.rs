@@ -133,15 +133,6 @@ impl OpLendToken {
         events::MintWithAmountOnly { to, amount }.publish(&e);
     }
 
-    pub fn admin_burn(e: Env, user: Address, amount: i128) {
-        check_nonnegative_amount(&e, amount);
-        require_admin(&e);
-
-        account::adjust(&e, &user, -amount, Wl::Skip);
-        reduce_total_supply(&e, amount);
-        events::Burn { from: user, amount }.publish(&e);
-    }
-
     pub fn whitelist_user_admin(e: Env, user: Address, state: bool) {
         require_admin(&e);
         account::set_whitelisted(&e, &user, state);
@@ -224,6 +215,9 @@ impl OpLendToken {
     }
 }
 
+/// SEP-41, except that only the admin burns: `burn` takes the admin's auth
+/// instead of the holder's, and `burn_from` only lets the admin spend an
+/// allowance.
 #[contractimpl(contracttrait)]
 impl TokenInterface for OpLendToken {
     fn allowance(e: Env, from: Address, spender: Address) -> i128 {
@@ -308,20 +302,22 @@ impl TokenInterface for OpLendToken {
         .publish(&e);
     }
 
+    /// Admin only: burns from any holder, without the holder's auth.
     fn burn(e: Env, from: Address, amount: i128) {
-        from.require_auth();
         check_nonnegative_amount(&e, amount);
-        bump_instance(&e);
+        require_admin(&e);
 
         account::adjust(&e, &from, -amount, Wl::Skip);
         reduce_total_supply(&e, amount);
         events::Burn { from, amount }.publish(&e);
     }
 
+    /// Admin only: `spender` must be the admin, and spends its allowance.
     fn burn_from(e: Env, spender: Address, from: Address, amount: i128) {
-        spender.require_auth();
         check_nonnegative_amount(&e, amount);
-        bump_instance(&e);
+        if spender != require_admin(&e) {
+            panic_with_error!(&e, Error::NotAdmin);
+        }
 
         spend_allowance(&e, from.clone(), spender, amount);
         account::adjust(&e, &from, -amount, Wl::Skip);

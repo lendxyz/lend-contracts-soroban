@@ -36,7 +36,7 @@ fn refund_one(
     pos.invested = 0;
     st::write_position(e, id, &user, &pos);
 
-    oplend.admin_burn(&user, &oplend_balance);
+    oplend.burn(&user, &oplend_balance);
     usdc.transfer(&e.current_contract_address(), &user, &invested);
 
     events::Refunded {
@@ -142,7 +142,7 @@ pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
         panic_with_error!(e, Error::InvalidAmount);
     }
     let op = st::read_op(e, op_id);
-    OpLendClient::new(e, &op.op_token).admin_burn(&user, &value);
+    OpLendClient::new(e, &op.op_token).burn(&user, &value);
 }
 
 pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {

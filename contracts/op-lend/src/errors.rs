@@ -13,4 +13,5 @@ pub enum Error {
     NotWhitelisted = 7,
     NonceAlreadyUsed = 8,
     BadAllowanceExpiration = 9,
+    NotAdmin = 10,
 }

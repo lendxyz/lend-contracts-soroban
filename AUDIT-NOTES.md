@@ -20,3 +20,17 @@ the backend signature carrying it can never be used.
 - op-lend `whitelist_user` now verifies the signature before the nonce check
   (shared `consume_nonce` with `void_nonce`): a bad signature on a spent nonce
   now fails with the crypto error instead of `NonceAlreadyUsed`.
+
+## OpLend: admin-only burning
+
+> Addresses **OpLend C1**
+
+- `burn` and `burn_from` stay (op-lend still implements SEP-41
+  `TokenInterface`) but are admin-only:
+  - `burn(from, amount)` requires the admin's auth instead of `from`'s, and
+    burns from any holder without an allowance.
+  - `burn_from(spender, from, amount)` panics with `NotAdmin` (new error 10)
+    unless `spender` is the admin; it requires the admin's auth and spends the
+    allowance as usual.
+- `admin_burn` is removed; `burn` replaces it. The factory's refunds and
+  `oplend_admin_burn` now call `burn`.

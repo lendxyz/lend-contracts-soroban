@@ -3,7 +3,8 @@ extern crate std;
 
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
-    testutils::Address as _, Address, Bytes, BytesN, Env, FromVal, String,
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    Address, Bytes, BytesN, Env, FromVal, IntoVal, String,
 };
 
 use crate::contract::{OpLendToken, OpLendTokenClient};
@@ -137,8 +138,10 @@ fn test_transfer_from_requires_whitelist() {
     assert_eq!(token.balance(&user2), 400);
 }
 
+/// AUDIT OpLend C1: the admin burns from any holder; the holder's own auth
+/// is not enough.
 #[test]
-fn test_admin_burn() {
+fn test_burn_is_admin_only() {
     let e = Env::default();
     e.mock_all_auths();
 
@@ -147,25 +150,50 @@ fn test_admin_burn() {
     let token = create_token(&e, &admin);
 
     token.mint(&user1, &1000);
-    assert_eq!(token.total_supply(), 1000);
 
-    token.admin_burn(&user1, &400);
+    e.mock_auths(&[MockAuth {
+        address: &user1,
+        invoke: &MockAuthInvoke {
+            contract: &token.address,
+            fn_name: "burn",
+            args: (&user1, 300_i128).into_val(&e),
+            sub_invokes: &[],
+        },
+    }]);
+    assert!(token.try_burn(&user1, &300).is_err());
+    assert_eq!(token.balance(&user1), 1000);
+
+    e.mock_all_auths();
+    token.burn(&user1, &400);
+    assert_eq!(e.auths()[0].0, admin);
     assert_eq!(token.balance(&user1), 600);
     assert_eq!(token.total_supply(), 600);
 }
 
+/// AUDIT OpLend C1: an allowance lets only the admin burn.
 #[test]
-fn test_burn_decrements_supply() {
+fn test_burn_from_is_admin_only() {
     let e = Env::default();
     e.mock_all_auths();
 
     let admin = Address::generate(&e);
     let user1 = Address::generate(&e);
+    let spender = Address::generate(&e);
     let token = create_token(&e, &admin);
 
     token.mint(&user1, &1000);
-    token.burn(&user1, &300);
+    token.approve(&user1, &spender, &1000, &1000);
+    token.approve(&user1, &admin, &1000, &1000);
+
+    assert_eq!(
+        token.try_burn_from(&spender, &user1, &300),
+        Err(Ok(Error::NotAdmin.into()))
+    );
+
+    token.burn_from(&admin, &user1, &300);
     assert_eq!(token.balance(&user1), 700);
+    assert_eq!(token.allowance(&user1, &admin), 700);
+    assert_eq!(token.allowance(&user1, &spender), 1000);
     assert_eq!(token.total_supply(), 700);
 }
 
