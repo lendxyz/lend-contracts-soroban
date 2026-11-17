@@ -82,3 +82,12 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   uses to price shares, so it is 6-decimal EUR like every other internal amount
   (`2_000_000` = 2 EUR).
 - Indexers that read this field must treat it as 6-decimal.
+
+## Factory: `fiat_invest` requires a started operation
+
+> Addresses **Factory C9**
+
+- `fiat_invest` minted shares on operations that were not started yet. It now
+  fails with `OperationNotStarted`, like `invest`.
+- Both paths share one guard (`load_started`: not finished, then started), so
+  they cannot drift apart again.

@@ -794,3 +794,30 @@ fn test_fiat_invest() {
         Err(Ok(Error::NonceAlreadyUsed.into()))
     );
 }
+
+/// AUDIT Factory C9: like `invest`, `fiat_invest` only mints on a started
+/// operation, and a rejected call leaves the nonce spendable.
+#[test]
+fn test_fiat_invest_before_start_fails() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+
+    let user = Address::generate(&s.e);
+    let holder = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "fiat-early");
+    let sig =
+        sign_fiat_invest(&s.e, &s.factory_id, id, &user, &holder, 40, &nonce);
+
+    assert_eq!(
+        s.factory
+            .try_fiat_invest(&id, &40, &user, &holder, &nonce, &sig),
+        Err(Ok(Error::OperationNotStarted.into()))
+    );
+    assert_eq!(oplend::Client::new(&s.e, &op_addr).balance(&holder), 0);
+    assert_eq!(s.factory.funding_progress(&id), 0);
+
+    s.factory.start_operation(&id);
+    s.factory
+        .fiat_invest(&id, &40, &user, &holder, &nonce, &sig);
+    assert_eq!(s.factory.funding_progress(&id), 40);
+}

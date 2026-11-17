@@ -10,10 +10,15 @@ use crate::oracle::{amount_in, amount_out};
 use crate::storage as st;
 use crate::types::{OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED};
 
-fn load_open(e: &Env, id: u32) -> OpData {
+/// An operation that accepts investments: started and not finished. Both
+/// funding paths (`invest`, `fiat_invest`) go through this.
+fn load_started(e: &Env, id: u32) -> OpData {
     let op = st::read_op(e, id);
     if op.finished() {
         panic_with_error!(e, Error::OperationFinished);
+    }
+    if !op.flag(F_STARTED) {
+        panic_with_error!(e, Error::OperationNotStarted);
     }
     op
 }
@@ -55,10 +60,7 @@ pub fn invest(
     st::bump_instance(e);
     st::require_not_blacklisted(e, &user);
 
-    let mut op = load_open(e, id);
-    if !op.flag(F_STARTED) {
-        panic_with_error!(e, Error::OperationNotStarted);
-    }
+    let mut op = load_started(e, id);
     check_fundable(e, &op, shares_amount);
 
     let cost = amount_in(e, op.eur_per_shares, shares_amount);
@@ -100,7 +102,7 @@ pub fn fiat_invest(
 ) {
     st::bump_instance(e);
 
-    let mut op = load_open(e, id);
+    let mut op = load_started(e, id);
     check_fundable(e, &op, shares_amount);
     st::require_not_blacklisted(e, &user);
     st::require_not_blacklisted(e, &oplend_holder);
