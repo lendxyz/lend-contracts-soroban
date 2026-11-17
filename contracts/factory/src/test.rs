@@ -296,6 +296,115 @@ fn test_invest_nonce_replay_fails() {
     );
 }
 
+/// Independent reconstruction of the `VOID_NONCE` payload.
+fn sign_void(
+    e: &Env,
+    contract: &Address,
+    nonce: &String,
+) -> Option<BytesN<64>> {
+    let mut msg = Bytes::from_slice(e, b"VOID_NONCE");
+    msg.append(&Bytes::from(contract.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+    let v: std::vec::Vec<u8> = msg.iter().collect();
+    Some(BytesN::from_array(e, &signer_key().sign(&v).to_bytes()))
+}
+
+#[test]
+fn test_void_nonce_blocks_the_invest_signature() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "n1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
+    let void_sig = sign_void(&s.e, &s.factory_id, &nonce);
+
+    s.factory.void_nonce(&nonce, &void_sig);
+
+    assert_eq!(
+        s.factory.try_invest(&user, &id, &100, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+    assert_eq!(
+        s.factory.try_void_nonce(&nonce, &void_sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+}
+
+/// Neither the invest signature nor a void signed for another contract may
+/// burn the nonce, and a rejected void leaves it spendable.
+#[test]
+fn test_void_nonce_rejects_foreign_signatures() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "n1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
+    let other = Address::generate(&s.e);
+
+    assert!(s
+        .factory
+        .try_void_nonce(&nonce, &Some(sig.clone()))
+        .is_err());
+    assert!(s
+        .factory
+        .try_void_nonce(&nonce, &sign_void(&s.e, &other, &nonce))
+        .is_err());
+
+    s.factory.invest(&user, &id, &100, &nonce, &sig);
+    assert_eq!(s.factory.funding_progress(&id), 100);
+}
+
+#[test]
+fn test_admin_void_nonce_needs_no_signature() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "n1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
+
+    s.factory.void_nonce(&nonce, &None);
+
+    assert_eq!(
+        s.factory.try_invest(&user, &id, &100, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+
+    // Without a signature, only the admin's auth can void.
+    s.e.set_auths(&[]);
+    let other = String::from_str(&s.e, "n2");
+    assert!(s.factory.try_void_nonce(&other, &None).is_err());
+}
+
+/// op-lend's admin is the factory, so its admin void runs through here.
+#[test]
+fn test_oplend_void_nonce_blocks_the_whitelist_signature() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+
+    let user = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "wl-1");
+    let mut msg = Bytes::from(op_addr.to_string());
+    msg.append(&Bytes::from(user.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+    let v: std::vec::Vec<u8> = msg.iter().collect();
+    let sig = BytesN::from_array(&s.e, &signer_key().sign(&v).to_bytes());
+
+    s.factory.oplend_void_nonce(&id, &nonce);
+
+    assert!(op_token.try_whitelist_user(&user, &nonce, &sig).is_err());
+    assert!(!op_token.is_whitelisted(&user));
+}
+
 #[test]
 fn test_blacklisted_user_cannot_invest() {
     let s = setup();

@@ -1,7 +1,9 @@
 use crate::account::{self, Wl};
 use crate::admin::{read_administrator, write_administrator};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
-use crate::crypto::{build_whitelist_message, verify_backend_sig};
+use crate::crypto::{
+    build_void_nonce_message, build_whitelist_message, verify_backend_sig,
+};
 use crate::errors::Error;
 use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
@@ -51,6 +53,14 @@ fn read_backend_signer(e: &Env) -> BytesN<32> {
     }
 }
 
+fn consume_nonce(e: &Env, nonce: &String) {
+    let key = DataKey::UsedNonce(nonce.clone());
+    if e.storage().persistent().has(&key) {
+        panic_with_error!(e, Error::NonceAlreadyUsed);
+    }
+    e.storage().persistent().set(&key, &());
+}
+
 fn require_admin(e: &Env) -> Address {
     let admin = read_administrator(e);
     admin.require_auth();
@@ -66,6 +76,12 @@ pub struct SetAdmin {
     #[topic]
     admin: Address,
     new_admin: Address,
+}
+
+#[contractevent]
+pub struct NonceVoided {
+    #[topic]
+    nonce: String,
 }
 
 #[contractimpl]
@@ -138,17 +154,37 @@ impl OpLendToken {
         signature: BytesN<64>,
     ) {
         bump_instance(&e);
-        let nonce_key = DataKey::UsedNonce(nonce.clone());
-
-        if e.storage().persistent().has(&nonce_key) {
-            panic_with_error!(&e, Error::NonceAlreadyUsed);
-        }
 
         let msg = build_whitelist_message(&e, &user, &nonce);
         verify_backend_sig(&e, &read_backend_signer(&e), &msg, &signature);
+        consume_nonce(&e, &nonce);
 
-        e.storage().persistent().set(&nonce_key, &());
         account::set_whitelisted(&e, &user, true);
+    }
+
+    /// Burns an unspent whitelist `nonce` so the signature carrying it can
+    /// never be used. With a `signature`, authorized by the backend signing the
+    /// void message (not the original signature, which also binds the user);
+    /// without one, by the admin's auth.
+    pub fn void_nonce(e: Env, nonce: String, signature: Option<BytesN<64>>) {
+        match signature {
+            Some(signature) => {
+                bump_instance(&e);
+                let msg = build_void_nonce_message(&e, &nonce);
+                verify_backend_sig(
+                    &e,
+                    &read_backend_signer(&e),
+                    &msg,
+                    &signature,
+                );
+            }
+            None => {
+                require_admin(&e);
+            }
+        }
+        consume_nonce(&e, &nonce);
+
+        NonceVoided { nonce }.publish(&e);
     }
 
     pub fn update_backend_signer(e: Env, new_signer: BytesN<32>) {

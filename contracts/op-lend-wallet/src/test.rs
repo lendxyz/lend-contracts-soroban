@@ -239,6 +239,85 @@ fn test_redeem_signature_does_not_cross_wallets() {
     s.wallet.redeem(&OP_ID, &user, &250, &n, &sig);
 }
 
+/// Independent reconstruction of the `VOID_NONCE` payload.
+fn sign_void(
+    e: &Env,
+    contract: &Address,
+    nonce: &String,
+) -> Option<BytesN<64>> {
+    let mut msg = Bytes::from_slice(e, b"VOID_NONCE");
+    msg.append(&Bytes::from(contract.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+
+    let v: std::vec::Vec<u8> = msg.iter().collect();
+    Some(BytesN::from_array(e, &signer_key().sign(&v).to_bytes()))
+}
+
+#[test]
+fn test_void_nonce_blocks_the_redeem_signature() {
+    let s = setup();
+    let user = whitelisted_user(&s);
+    let n = nonce(&s.e, "voided");
+    let sig = sign_redeem(&s, &user, 250, &n);
+    let void_sig = sign_void(&s.e, &s.wallet_id, &n);
+
+    s.wallet.void_nonce(&n, &void_sig);
+    assert!(s.wallet.nonce_used(&n));
+
+    assert_eq!(
+        s.wallet.try_redeem(&OP_ID, &user, &250, &n, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+    assert_eq!(
+        s.wallet.try_void_nonce(&n, &void_sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+    assert_eq!(s.op_token.balance(&s.wallet_id), FUNDED);
+}
+
+/// Neither the redeem signature nor a void signed for another wallet may burn
+/// the nonce, and a rejected void leaves it spendable.
+#[test]
+fn test_void_nonce_rejects_foreign_signatures() {
+    let s = setup();
+    let user = whitelisted_user(&s);
+    let n = nonce(&s.e, "not-voided");
+    let sig = sign_redeem(&s, &user, 250, &n);
+    let other_wallet = Address::generate(&s.e);
+
+    assert!(s.wallet.try_void_nonce(&n, &Some(sig.clone())).is_err());
+    assert!(s
+        .wallet
+        .try_void_nonce(&n, &sign_void(&s.e, &other_wallet, &n))
+        .is_err());
+    assert!(!s.wallet.nonce_used(&n));
+
+    s.wallet.redeem(&OP_ID, &user, &250, &n, &sig);
+    assert_eq!(s.op_token.balance(&user), 250);
+}
+
+#[test]
+fn test_admin_void_nonce_needs_no_signature() {
+    let s = setup();
+    let user = whitelisted_user(&s);
+    let n = nonce(&s.e, "admin-voided");
+    let sig = sign_redeem(&s, &user, 250, &n);
+
+    s.wallet.void_nonce(&n, &None);
+    assert!(s.wallet.nonce_used(&n));
+
+    assert_eq!(
+        s.wallet.try_redeem(&OP_ID, &user, &250, &n, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+
+    // Without a signature, only the admin's auth can void.
+    s.e.set_auths(&[]);
+    let other = nonce(&s.e, "not-admin");
+    assert!(s.wallet.try_void_nonce(&other, &None).is_err());
+    assert!(!s.wallet.nonce_used(&other));
+}
+
 #[test]
 fn test_redeem_for_an_unregistered_operation_fails() {
     let s = setup();

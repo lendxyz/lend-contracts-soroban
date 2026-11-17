@@ -8,6 +8,7 @@ pub trait OpLendInterface {
     fn admin_burn(env: Env, user: Address, amount: i128);
     fn whitelist_user_admin(env: Env, user: Address, state: bool);
     fn update_backend_signer(env: Env, new_signer: BytesN<32>);
+    fn void_nonce(env: Env, nonce: String, signature: Option<BytesN<64>>);
     fn balance(env: Env, id: Address) -> i128;
 }
 

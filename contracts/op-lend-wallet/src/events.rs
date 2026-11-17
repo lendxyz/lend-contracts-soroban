@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN};
+use soroban_sdk::{contractevent, Address, BytesN, String};
 
 #[contractevent]
 pub struct Redeemed {
@@ -35,4 +35,10 @@ pub struct AdminUpdated {
     #[topic]
     pub admin: Address,
     pub new_admin: Address,
+}
+
+#[contractevent]
+pub struct NonceVoided {
+    #[topic]
+    pub nonce: String,
 }

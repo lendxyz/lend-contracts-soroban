@@ -1,8 +1,8 @@
 use soroban_sdk::{panic_with_error, Address, BytesN, Env, String, Vec};
 
 use crate::crypto::{
-    build_fiat_invest_message, build_invest_message, consume_nonce,
-    verify_backend_sig,
+    build_fiat_invest_message, build_invest_message, build_void_nonce_message,
+    consume_nonce, verify_backend_sig,
 };
 use crate::errors::Error;
 use crate::events;
@@ -311,6 +311,31 @@ pub fn claim_op_tokens_batch(e: &Env, id: u32, users: Vec<Address>) {
     for user in users.iter() {
         claim_token(e, id, &oplend, &user, &user);
     }
+}
+
+/// Burns an unspent `nonce` so the invest signature carrying it can never be
+/// used. With a `signature`, authorized by the backend signing the void
+/// message (not the original signature, which binds fields this call does not
+/// take); without one, by the admin's auth.
+pub fn void_nonce(e: &Env, nonce: String, signature: Option<BytesN<64>>) {
+    match signature {
+        Some(signature) => {
+            let msg = build_void_nonce_message(e, &nonce);
+            verify_backend_sig(
+                e,
+                &st::read_backend_signer(e),
+                &msg,
+                &signature,
+            );
+        }
+        None => {
+            st::require_admin(e);
+        }
+    }
+    st::bump_instance(e);
+    consume_nonce(e, &nonce);
+
+    events::NonceVoided { nonce }.publish(e);
 }
 
 pub fn get_amount_in(e: &Env, id: u32, shares_amount: i128) -> i128 {

@@ -1,4 +1,4 @@
-use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, Vec};
+use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events;
@@ -126,6 +126,13 @@ pub fn oplend_update_backend_signer(
     st::bump_instance(e);
     let op = st::read_op(e, op_id);
     OpLendClient::new(e, &op.op_token).update_backend_signer(&new_signer);
+}
+
+pub fn oplend_void_nonce(e: &Env, op_id: u32, nonce: String) {
+    st::require_admin(e);
+    st::bump_instance(e);
+    let op = st::read_op(e, op_id);
+    OpLendClient::new(e, &op.op_token).void_nonce(&nonce, &None);
 }
 
 pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {

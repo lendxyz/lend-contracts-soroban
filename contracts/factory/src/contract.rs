@@ -134,6 +134,10 @@ impl LendFactory {
         invest::claim_op_tokens_batch(&env, id, users);
     }
 
+    pub fn void_nonce(env: Env, nonce: String, signature: Option<BytesN<64>>) {
+        invest::void_nonce(&env, nonce, signature);
+    }
+
     pub fn get_amount_in(env: Env, id: u32, shares_amount: i128) -> i128 {
         invest::get_amount_in(&env, id, shares_amount)
     }
@@ -184,6 +188,10 @@ impl LendFactory {
         new_signer: BytesN<32>,
     ) {
         admin::oplend_update_backend_signer(&env, op_id, new_signer);
+    }
+
+    pub fn oplend_void_nonce(env: Env, op_id: u32, nonce: String) {
+        admin::oplend_void_nonce(&env, op_id, nonce);
     }
 
     pub fn oplend_admin_burn(env: Env, op_id: u32, user: Address, value: i128) {

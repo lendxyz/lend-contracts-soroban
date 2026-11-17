@@ -62,6 +62,23 @@ pub fn build_fiat_invest_message(
     with_nonce(e, &buf, nonce)
 }
 
+/// The message the backend signs to void `nonce` before it is spent. The tag
+/// keeps it from ever verifying as an invest message, and the factory address
+/// keeps it from voiding the same nonce on another contract.
+pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
+    const TAG: &[u8] = b"VOID_NONCE";
+    const FACTORY: usize = TAG.len();
+    const END: usize = FACTORY + STRKEY_LEN;
+
+    let mut buf = [0u8; END];
+    buf[..FACTORY].copy_from_slice(TAG);
+    e.current_contract_address()
+        .to_string()
+        .copy_into_slice(&mut buf[FACTORY..]);
+
+    with_nonce(e, &buf, nonce)
+}
+
 fn with_nonce(e: &Env, head: &[u8], nonce: &String) -> Bytes {
     let mut msg = Bytes::from_slice(e, head);
     msg.append(&Bytes::from(nonce));

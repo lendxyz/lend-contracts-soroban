@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address};
+use soroban_sdk::{contractevent, Address, String};
 
 #[contractevent]
 pub struct OperationCreated {
@@ -117,4 +117,10 @@ pub struct FundingWithdrawn {
     #[topic]
     pub operation_id: u32,
     pub usdc_amount: i128,
+}
+
+#[contractevent]
+pub struct NonceVoided {
+    #[topic]
+    pub nonce: String,
 }

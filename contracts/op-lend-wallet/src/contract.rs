@@ -3,7 +3,8 @@ use soroban_sdk::{
 };
 
 use crate::crypto::{
-    build_redeem_message, consume_nonce, nonce_used, verify_backend_sig,
+    build_redeem_message, build_void_nonce_message, consume_nonce, nonce_used,
+    verify_backend_sig,
 };
 use crate::errors::Error;
 use crate::events;
@@ -205,6 +206,27 @@ impl OpLendWallet {
             amount,
         }
         .publish(&e);
+    }
+
+    /// Burns an unspent redeem `nonce` so the signature carrying it can never
+    /// be used. With a `signature`, authorized by the backend signing the void
+    /// message (not the original signature, which binds fields this call does
+    /// not take); without one, by the admin's auth.
+    pub fn void_nonce(e: Env, nonce: String, signature: Option<BytesN<64>>) {
+        match signature {
+            Some(signature) => {
+                let msg = build_void_nonce_message(&e, &nonce);
+                let signer = st::read_backend_signer(&e);
+                verify_backend_sig(&e, &signer, &msg, &signature);
+            }
+            None => {
+                st::require_admin(&e);
+            }
+        }
+        st::bump_instance(&e);
+        consume_nonce(&e, &nonce);
+
+        events::NonceVoided { nonce }.publish(&e);
     }
 
     // --- Getters ---

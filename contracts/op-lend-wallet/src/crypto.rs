@@ -48,6 +48,25 @@ pub fn build_redeem_message(
     msg
 }
 
+/// The message the backend signs to void a redeem nonce before it is spent.
+/// The tag keeps it from ever verifying as a redeem, and the wallet address
+/// keeps it from voiding the same nonce on another contract.
+pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
+    const TAG: &[u8] = b"VOID_NONCE";
+    const WALLET: usize = TAG.len();
+    const END: usize = WALLET + STRKEY_LEN;
+
+    let mut buf = [0u8; END];
+    buf[..WALLET].copy_from_slice(TAG);
+    e.current_contract_address()
+        .to_string()
+        .copy_into_slice(&mut buf[WALLET..]);
+
+    let mut msg = Bytes::from_slice(e, &buf);
+    msg.append(&Bytes::from(nonce));
+    msg
+}
+
 /// Verifies an ed25519 backend signature over `msg`. Panics if it does not
 /// check out, which reverts the whole redeem — including the nonce spend.
 pub fn verify_backend_sig(

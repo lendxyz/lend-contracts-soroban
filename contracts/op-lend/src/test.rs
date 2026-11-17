@@ -223,6 +223,98 @@ fn test_whitelist_user_bad_signature() {
     token.whitelist_user(&user, &nonce, &sig);
 }
 
+/// Independent reconstruction of the `VOID_NONCE` payload.
+fn sign_void(
+    e: &Env,
+    contract: &Address,
+    nonce: &String,
+) -> Option<BytesN<64>> {
+    let mut msg = Bytes::from_slice(e, b"VOID_NONCE");
+    msg.append(&Bytes::from(contract.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+
+    let msg_vec: std::vec::Vec<u8> = msg.iter().collect();
+    Some(BytesN::from_array(
+        e,
+        &signer_key().sign(&msg_vec).to_bytes(),
+    ))
+}
+
+#[test]
+fn test_void_nonce_blocks_the_whitelist_signature() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let user = Address::generate(&e);
+    let token = create_token(&e, &admin);
+
+    let nonce = String::from_val(&e, &"nonce-1");
+    let sig = sign_whitelist(&e, &token, &user, &nonce);
+    let void_sig = sign_void(&e, &token.address, &nonce);
+
+    token.void_nonce(&nonce, &void_sig);
+
+    assert_eq!(
+        token.try_whitelist_user(&user, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+    assert_eq!(
+        token.try_void_nonce(&nonce, &void_sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+    assert!(!token.is_whitelisted(&user));
+}
+
+/// Neither the whitelist signature nor a void signed for another contract may
+/// burn the nonce, and a rejected void leaves it spendable.
+#[test]
+fn test_void_nonce_rejects_foreign_signatures() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let user = Address::generate(&e);
+    let other = Address::generate(&e);
+    let token = create_token(&e, &admin);
+
+    let nonce = String::from_val(&e, &"nonce-1");
+    let sig = sign_whitelist(&e, &token, &user, &nonce);
+
+    assert!(token.try_void_nonce(&nonce, &Some(sig.clone())).is_err());
+    assert!(token
+        .try_void_nonce(&nonce, &sign_void(&e, &other, &nonce))
+        .is_err());
+
+    token.whitelist_user(&user, &nonce, &sig);
+    assert!(token.is_whitelisted(&user));
+}
+
+#[test]
+fn test_admin_void_nonce_needs_no_signature() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let user = Address::generate(&e);
+    let token = create_token(&e, &admin);
+
+    let nonce = String::from_val(&e, &"nonce-1");
+    let sig = sign_whitelist(&e, &token, &user, &nonce);
+
+    token.void_nonce(&nonce, &None);
+
+    assert_eq!(
+        token.try_whitelist_user(&user, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+
+    // Without a signature, only the admin's auth can void.
+    e.set_auths(&[]);
+    let other = String::from_val(&e, &"nonce-2");
+    assert!(token.try_void_nonce(&other, &None).is_err());
+}
+
 #[test]
 fn test_approve_and_allowance() {
     let e = Env::default();
