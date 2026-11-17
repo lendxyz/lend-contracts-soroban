@@ -71,3 +71,14 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `FIRST_OP_ID`), and its deterministic deploy salt now includes the factory
   wasm hash: the old salt derived the existing factory id on both networks, so
   a fresh deploy would have been skipped as "already deployed".
+
+## Factory: `OperationFinished.amount_raised_euro` in 6 decimals
+
+> Addresses **Factory C8**
+
+- `amount_raised_euro` was `total_shares * eur_per_shares`: two 6-decimal
+  values, so a 12-decimal amount (2 shares at 1 EUR emitted `2_000_000_000_000`).
+- It is now divided by `PRICE_PRECISION` (1e6), the same rescale `amount_in`
+  uses to price shares, so it is 6-decimal EUR like every other internal amount
+  (`2_000_000` = 2 EUR).
+- Indexers that read this field must treat it as 6-decimal.

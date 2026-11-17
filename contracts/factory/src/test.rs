@@ -4,13 +4,14 @@ extern crate std;
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
     contract, contractimpl,
-    testutils::{Address as _, Ledger as _},
+    testutils::{Address as _, Events as _, Ledger as _},
     token::StellarAssetClient,
-    Address, Bytes, BytesN, Env, String,
+    Address, Bytes, BytesN, Env, Event as _, String,
 };
 
 use crate::contract::{LendFactory, LendFactoryClient};
 use crate::errors::Error;
+use crate::events::OperationFinished;
 use crate::oracle::{Asset, PriceData};
 
 // Op-lend wasm, built by `cargo build -p lend-operation-token --target wasm32v1-none --release`.
@@ -520,6 +521,28 @@ fn invest_as(s: &Setup, id: u32, user: &Address, shares: i128, nonce: &str) {
     let nonce = String::from_str(&s.e, nonce);
     let sig = sign_invest(&s.e, &s.factory_id, id, user, shares, &nonce);
     s.factory.invest(user, &id, &shares, &nonce, &sig);
+}
+
+/// AUDIT Factory C8: `amount_raised_euro` is 6-decimal EUR like every other
+/// internal amount, not the 12-decimal shares × price product.
+#[test]
+fn test_operation_finished_reports_six_decimal_euros() {
+    let s = setup();
+    // 2 whole shares (6-decimal) at 1 EUR each.
+    let (id, _) = create_op(&s, 2_000_000);
+    s.factory.start_operation(&id);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &100_000_000);
+    invest_as(&s, id, &user, 2_000_000, "fill");
+
+    let expected = OperationFinished {
+        operation_id: id,
+        amount_raised_euro: 2_000_000, // 2 EUR
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
 }
 
 /// Withdrawal no longer waits for the end of the sale; each call takes only

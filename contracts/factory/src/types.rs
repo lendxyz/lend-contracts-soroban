@@ -1,5 +1,7 @@
 use soroban_sdk::{contractclient, contracttype, Address, BytesN, Env, String};
 
+use crate::oracle::PRICE_PRECISION;
+
 /// Subset of the op-lend token interface the factory calls cross-contract.
 #[contractclient(name = "OpLendClient")]
 #[allow(dead_code)]
@@ -72,8 +74,11 @@ impl OpData {
         self.flag(F_STARTED) && self.fully_funded()
     }
 
+    /// EUR value of the whole operation, 6-decimal like every internal amount.
+    /// Shares and `eur_per_shares` are both 6-decimal, so their product is
+    /// 12-decimal; rescale it the same way `amount_in` prices shares.
     pub fn raised_euro(&self) -> i128 {
-        self.total_shares * self.eur_per_shares
+        self.total_shares * self.eur_per_shares / PRICE_PRECISION
     }
 }
 
