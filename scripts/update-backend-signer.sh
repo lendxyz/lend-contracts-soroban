@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
-# Update the factory's backend signer (the ed25519 key that authorizes invest /
-# fiat-invest messages). Admin-only (SOURCE must be the factory admin).
+# Update the backend signer (the ed25519 key that authorizes invest /
+# fiat-invest, op-lend whitelist and wallet redeem messages). It lives on the
+# factory only: op-lend tokens and the op-lend wallet read it from there, so
+# this one call rotates it everywhere. Admin-only (SOURCE must be the factory
+# admin).
 #
 # Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
 #

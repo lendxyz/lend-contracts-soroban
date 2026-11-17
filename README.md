@@ -109,9 +109,12 @@ Responsibilities:
   `withdraw_usdc` releases the raised funds not yet withdrawn, any time after
   an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
-  `oplend_whitelist_user`, `oplend_update_backend_signer`, `oplend_void_nonce`,
-  `oplend_admin_burn`, and `oplend_upgrade` (which also makes the new wasm the
-  code later operations deploy from).
+  `oplend_whitelist_user`, `oplend_void_nonce`, `oplend_admin_burn`, and
+  `oplend_upgrade` (which also makes the new wasm the code later operations
+  deploy from).
+- **Backend signer**: held only here. `backend_signer()` serves it to every
+  op-lend token and to the OpLendWallet, which read it on each signature
+  check, so `update_backend_signer` rotates it everywhere at once.
 - **Pricing helpers**: `get_amount_in` / `get_amount_out` quote shares ↔ USDC.
 
 Key invariants enforced on every invest path (`invest_guards`): operation
@@ -135,11 +138,13 @@ enforce the legal framework for tokenized securities:
 - **Admin-only burning** — `burn(from, amount)` takes the admin's auth instead
   of the holder's (burn from any holder, no allowance); `burn_from` rejects any
   spender but the admin (`NotAdmin`).
-- **Admin controls** — `set_admin`, `update_backend_signer`.
+- **Admin controls** — `set_admin`, `upgrade`.
 
 Constructor parameters: `admin`, `decimal` (≤ 6), `name`, `symbol`,
-`max_supply`, `backend_signer`. In production the Factory is the `admin` and the
-`max_supply` is the operation's `total_shares`.
+`max_supply`, `factory`. The backend signer is read from `factory` on every
+check, never stored; `factory` is fixed at deploy and cannot be changed. In
+production the Factory is both `admin` and `factory`,
+and `max_supply` is the operation's `total_shares`.
 
 ### OpLendWallet
 
@@ -163,12 +168,15 @@ the investor once they do have one.
   verified by the token itself) and then transfers, paying out to a wallet the
   token has never seen in a single transaction.
 - **Admin controls** — `admin_redeem` (same transfer, no signature: the escape
-  hatch), `set_admin`, `update_backend_signer`, and `upgrade(new_wasm_hash)`,
-  which swaps the code in place — same contract id, registry and used nonces
-  survive.
+  hatch), `set_admin`, `set_factory` (where the backend signer is read from),
+  and `upgrade(new_wasm_hash)`, which swaps the code in place — same contract
+  id, registry and used nonces survive.
 
-Constructor parameters: `admin`, `backend_signer`. One wallet serves every
-operation; it is the address `fiat_invest` is given as the `oplend_holder`.
+Constructor parameters: `admin`, `factory`. The backend signer is read from
+`factory` on every redeem, never stored. One wallet serves every operation; it
+is the address `fiat_invest` is given as the `oplend_holder`. After upgrading
+a wallet from the stored-signer version, or after a factory redeploy, point it
+at the factory with `set_factory` (`scripts/wallet-set-factory.sh`).
 
 ### LendRewards
 
@@ -336,10 +344,9 @@ fn fiat_refund(id: u32, user, oplend_holder, shares_amount: i128)  // admin; bur
 fn withdraw_usdc(id: u32, destination)
 fn update_oracle_address(new_oracle)
 fn update_usdc_oracle_address(new_oracle)                  // USDC/USD feed for the depeg check
-fn update_backend_signer(new_signer: BytesN<32>)
+fn update_backend_signer(new_signer: BytesN<32>)           // also rotates it for op-lend tokens + wallet
 fn blacklist(user, state: bool)
 fn oplend_whitelist_user(op_id: u32, user, state: bool)
-fn oplend_update_backend_signer(op_id: u32, new_signer: BytesN<32>)
 fn oplend_admin_burn(op_id: u32, user, value: i128)
 fn oplend_upgrade(op_id: u32, new_wasm_hash: BytesN<32>)   // upgrades that token + sets the hash new ops deploy from
 fn transfer_ownership(new_admin)
@@ -360,12 +367,13 @@ fn fiat_shares(id, user) -> i128                           // euro-bought shares
 fn blacklisted(user) -> bool
 fn usdc() -> Address
 fn oplend_wasm_hash() -> BytesN<32>                        // code new operations deploy from
+fn backend_signer() -> BytesN<32>                          // read by op-lend tokens + wallet on every check
 ```
 
 ### OpLend token (`OpLendToken`)
 
 ```rust
-fn __constructor(admin, decimal: u32, name: String, symbol: String, max_supply: i128, backend_signer: BytesN<32>)
+fn __constructor(admin, decimal: u32, name: String, symbol: String, max_supply: i128, factory: Address)
 
 // SEP-41 / TokenInterface
 fn allowance(from, spender) -> i128
@@ -383,9 +391,9 @@ fn symbol() -> String
 fn mint(to, amount: i128)                                  // admin; caps at max_supply; whitelists `to`
 fn whitelist_user_admin(user, state: bool)                 // admin
 fn whitelist_user(user, nonce: String, signature: BytesN<64>)
-fn update_backend_signer(new_signer: BytesN<32>)           // admin
 fn set_admin(new_admin)                                    // admin
 fn upgrade(new_wasm_hash: BytesN<32>)                      // admin (the factory: use oplend_upgrade)
+fn factory() -> Address
 fn is_whitelisted(user) -> bool
 fn total_supply() -> i128
 fn max_supply() -> i128
@@ -395,7 +403,7 @@ fn get_allowance(from, spender) -> Option<AllowanceValue>
 ### OpLendWallet (`OpLendWallet`)
 
 ```rust
-fn __constructor(admin, backend_signer: BytesN<32>)
+fn __constructor(admin, factory: Address)
 
 // Registry
 fn register_op_lend(op_id: u32, op_lend)                   // admin
@@ -410,12 +418,13 @@ fn admin_redeem(op_id: u32, destination, amount: i128)     // admin; no signatur
 
 // Admin
 fn set_admin(new_admin)                                    // admin
-fn update_backend_signer(new_signer: BytesN<32>)           // admin
+fn set_factory(factory)                                    // admin; contract address only
 fn upgrade(new_wasm_hash: BytesN<32>)                      // admin; in place, state survives
 
 // Getters
 fn admin() -> Address
-fn backend_signer() -> BytesN<32>
+fn backend_signer() -> BytesN<32>                          // read from the factory
+fn factory() -> Address
 fn op_lend(op_id: u32) -> Address
 fn op_lend_balance(op_id: u32) -> i128                     // the wallet's own balance
 fn nonce_used(nonce: String) -> bool

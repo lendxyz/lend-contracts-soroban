@@ -291,5 +291,31 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   - `test_refunds_after_cancel`: started, partly sold, canceled; `invest` and
     `fiat_invest` fail, `refund_user` + `batch_refund_users` return all USDC.
   - `test_backend_key_rotation`: after `update_backend_signer` the factory
-    takes only the new key while share tokens keep theirs until
-    `oplend_update_backend_signer`.
+    takes only the new key, and so does an existing share token (it reads the
+    signer from the factory since OpLend C4).
+
+## OpLend / OpLendWallet: backend signer read from the factory
+
+> Addresses **OpLend C4** and **OpLendWallet C3**
+
+- The backend signer is stored only on the factory, which exposes a new
+  read-only `backend_signer()`. Op-lend tokens and the op-lend wallet store
+  the factory address instead of a key and read the signer from it on every
+  signature check, so `factory.update_backend_signer` rotates it everywhere
+  at once.
+- op-lend: constructor takes `factory` (the factory passes itself) instead of
+  `backend_signer`; `update_backend_signer` is removed, and so is the
+  factory's `oplend_update_backend_signer` proxy. The factory is fixed at
+  deploy: no function can change it, so nothing can repoint a token's signer.
+  New `factory()` getter.
+- op-lend-wallet: constructor takes `factory` instead of `backend_signer`;
+  `update_backend_signer` (and its `BackendSignerUpdated` event) is replaced by
+  `set_factory(factory)` (admin, contract addresses only, emits
+  `FactoryUpdated`). `backend_signer()` now reads through the factory; new
+  `factory()` getter.
+- Upgrading the deployed wallet: its constructor does not run again, so until
+  `set_factory` is called it has no factory and redeems fail
+  (`NotInitialized`). Run `scripts/wallet-set-factory.sh` (or
+  `make wallet-set-factory`) right after the upgrade, pointing at the new
+  factory. `deploy-op-lend-wallet.sh` now passes `FACTORY_ID`.
+- Each signature check now costs one extra cross-contract read.

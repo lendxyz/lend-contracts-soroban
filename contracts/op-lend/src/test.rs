@@ -3,6 +3,7 @@ extern crate std;
 
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
+    contract, contractimpl, symbol_short,
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     Address, Bytes, BytesN, Env, FromVal, IntoVal, String,
 };
@@ -20,6 +21,35 @@ fn signer_pubkey(e: &Env) -> BytesN<32> {
     BytesN::from_array(e, &signer_key().verifying_key().to_bytes())
 }
 
+/// Stands in for the factory: serves the backend signer the token reads, and
+/// lets a test rotate it.
+#[contract]
+pub struct MockFactory;
+
+#[contractimpl]
+impl MockFactory {
+    pub fn __constructor(e: Env, signer: BytesN<32>) {
+        e.storage()
+            .instance()
+            .set(&symbol_short!("signer"), &signer);
+    }
+    pub fn set_signer(e: Env, signer: BytesN<32>) {
+        e.storage()
+            .instance()
+            .set(&symbol_short!("signer"), &signer);
+    }
+    pub fn backend_signer(e: Env) -> BytesN<32> {
+        e.storage()
+            .instance()
+            .get(&symbol_short!("signer"))
+            .unwrap()
+    }
+}
+
+fn mock_factory(e: &Env, signer: &BytesN<32>) -> Address {
+    e.register(MockFactory, (signer.clone(),))
+}
+
 fn create_token<'a>(e: &Env, admin: &Address) -> OpLendTokenClient<'a> {
     let token_contract = e.register(
         OpLendToken,
@@ -29,7 +59,7 @@ fn create_token<'a>(e: &Env, admin: &Address) -> OpLendTokenClient<'a> {
             String::from_val(e, &"name"),
             String::from_val(e, &"symbol"),
             MAX_SUPPLY,
-            signer_pubkey(e),
+            mock_factory(e, &signer_pubkey(e)),
         ),
     );
     OpLendTokenClient::new(e, &token_contract)
@@ -375,6 +405,36 @@ fn test_set_admin() {
     assert_eq!(token.balance(&user1), 10);
 }
 
+/// AUDIT OpLend C4: the backend key is read from the factory on every check,
+/// so rotating it there takes effect on the token at once.
+#[test]
+fn test_backend_signer_follows_the_factory() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let admin = Address::generate(&e);
+    let token = create_token(&e, &admin);
+    let factory = MockFactoryClient::new(&e, &token.factory());
+
+    let rotated = SigningKey::from_bytes(&[8u8; 32]);
+    factory.set_signer(&BytesN::from_array(
+        &e,
+        &rotated.verifying_key().to_bytes(),
+    ));
+
+    let user = Address::generate(&e);
+    let nonce = String::from_val(&e, &"after-rotation");
+    let old_sig = sign_whitelist(&e, &token, &user, &nonce);
+    assert!(token.try_whitelist_user(&user, &nonce, &old_sig).is_err());
+
+    let mut msg = Bytes::from(token.address.to_string());
+    msg.append(&Bytes::from(user.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+    let v: std::vec::Vec<u8> = msg.iter().collect();
+    let new_sig = BytesN::from_array(&e, &rotated.sign(&v).to_bytes());
+    token.whitelist_user(&user, &nonce, &new_sig);
+    assert!(token.is_whitelisted(&user));
+}
+
 /// AUDIT OpLend C3: only the admin (the factory in production) can swap the
 /// token's code. The hash is a real upload, so the only failure left is auth.
 #[test]
@@ -449,7 +509,7 @@ fn decimal_over_six() {
                 String::from_val(&e, &"name"),
                 String::from_val(&e, &"symbol"),
                 MAX_SUPPLY,
-                signer_pubkey(&e),
+                mock_factory(&e, &signer_pubkey(&e)),
             ),
         ),
     );

@@ -1511,9 +1511,17 @@ fn test_refunds_after_cancel() {
     assert_eq!(s.factory.usdc_raised(&id), 0);
 }
 
-/// After `update_backend_signer` the factory accepts only the new key, while
-/// existing share tokens keep their own signer until
-/// `oplend_update_backend_signer` rotates it too.
+/// The share token's whitelist message: token ‖ user ‖ nonce.
+fn whitelist_msg(token: &Address, who: &Address, nonce: &String) -> Bytes {
+    let mut msg = Bytes::from(token.to_string());
+    msg.append(&Bytes::from(who.to_string()));
+    msg.append(&Bytes::from(nonce.clone()));
+    msg
+}
+
+/// AUDIT OpLend C4: one `update_backend_signer` on the factory rotates the
+/// key everywhere, since share tokens read it from the factory: both the
+/// factory and an existing token reject the old key and accept the new one.
 #[test]
 fn test_backend_key_rotation() {
     let s = setup();
@@ -1526,41 +1534,26 @@ fn test_backend_key_rotation() {
     s.usdc.mint(&user, &10_000);
 
     s.factory.update_backend_signer(&new_pub);
+    assert_eq!(s.factory.backend_signer(), new_pub);
+    assert_eq!(op_token.factory(), s.factory_id);
 
     let nonce = String::from_str(&s.e, "inv");
     let msg = invest_msg(&s.e, &s.factory_id, id, &user, 10, &nonce);
     let old_sig = sign_with(&s.e, &signer_key(), &msg);
-    let new_sig = sign_with(&s.e, &new_key, &msg);
     assert!(s
         .factory
         .try_invest(&user, &id, &10, &nonce, &old_sig)
         .is_err());
-    s.factory.invest(&user, &id, &10, &nonce, &new_sig);
+    s.factory
+        .invest(&user, &id, &10, &nonce, &sign_with(&s.e, &new_key, &msg));
 
-    // The share token's whitelist message: token ‖ user ‖ nonce.
-    let whitelist_msg = |who: &Address, nonce: &String| {
-        let mut msg = Bytes::from(op_addr.to_string());
-        msg.append(&Bytes::from(who.to_string()));
-        msg.append(&Bytes::from(nonce.clone()));
-        msg
-    };
-
-    // The token still trusts the old key: the factory's rotation is its own.
-    let early = Address::generate(&s.e);
-    let nonce = String::from_str(&s.e, "wl-1");
-    let sig = sign_with(&s.e, &signer_key(), &whitelist_msg(&early, &nonce));
-    op_token.whitelist_user(&early, &nonce, &sig);
-    assert!(op_token.is_whitelisted(&early));
-
-    s.factory.oplend_update_backend_signer(&id, &new_pub);
-
-    let late = Address::generate(&s.e);
-    let nonce = String::from_str(&s.e, "wl-2");
-    let msg = whitelist_msg(&late, &nonce);
+    let other = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "wl");
+    let msg = whitelist_msg(&op_addr, &other, &nonce);
     let old_sig = sign_with(&s.e, &signer_key(), &msg);
     assert!(op_token
-        .try_whitelist_user(&late, &nonce, &old_sig)
+        .try_whitelist_user(&other, &nonce, &old_sig)
         .is_err());
-    op_token.whitelist_user(&late, &nonce, &sign_with(&s.e, &new_key, &msg));
-    assert!(op_token.is_whitelisted(&late));
+    op_token.whitelist_user(&other, &nonce, &sign_with(&s.e, &new_key, &msg));
+    assert!(op_token.is_whitelisted(&other));
 }

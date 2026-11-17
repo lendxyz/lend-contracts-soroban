@@ -11,6 +11,13 @@ pub trait OpLendInterface {
     );
 }
 
+/// The one factory function the wallet calls.
+#[allow(dead_code)]
+#[contractclient(name = "FactoryClient")]
+pub trait FactoryInterface {
+    fn backend_signer(env: Env) -> BytesN<32>;
+}
+
 #[contracttype]
 #[derive(Clone)]
 pub struct OpLendEntry {
@@ -21,7 +28,9 @@ pub struct OpLendEntry {
 #[contracttype(export = false)]
 pub enum DataKey {
     Admin,
-    BackendSigner,
+    /// Factory the backend signer is read from. Replaces the stored
+    /// `BackendSigner` of earlier versions (left behind, unread, on upgrade).
+    Factory,
     OpLend(u32),
     UsedNonce(String),
 }

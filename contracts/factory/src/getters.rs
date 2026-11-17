@@ -11,6 +11,10 @@ pub fn oplend_wasm_hash(e: &Env) -> BytesN<32> {
     st::read_oplend_wasm_hash(e)
 }
 
+pub fn backend_signer(e: &Env) -> BytesN<32> {
+    st::read_backend_signer(e)
+}
+
 pub fn operation_count(e: &Env) -> u32 {
     st::operation_count(e)
 }

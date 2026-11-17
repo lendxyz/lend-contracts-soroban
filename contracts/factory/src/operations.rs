@@ -32,7 +32,8 @@ pub fn create_operation(
 
     let id = st::operation_count(e) + 1;
 
-    // op-lend __constructor(admin, decimal, name, symbol, max_supply, signer)
+    // op-lend __constructor(admin, decimal, name, symbol, max_supply, factory):
+    // the factory is both its admin and where it reads the backend signer.
     let constructor_args: Vec<Val> = vec![
         e,
         e.current_contract_address().into_val(e),
@@ -40,7 +41,7 @@ pub fn create_operation(
         prefixed(e, b"Lend Operation - ", &op_name).into_val(e),
         op_symbol(e, id).into_val(e),
         total_shares.into_val(e),
-        st::read_backend_signer(e).into_val(e),
+        e.current_contract_address().into_val(e),
     ];
 
     let mut salt = [0u8; 32];

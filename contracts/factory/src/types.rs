@@ -9,7 +9,6 @@ pub trait OpLendInterface {
     fn mint(env: Env, to: Address, amount: i128);
     fn burn(env: Env, from: Address, amount: i128);
     fn whitelist_user_admin(env: Env, user: Address, state: bool);
-    fn update_backend_signer(env: Env, new_signer: BytesN<32>);
     fn void_nonce(env: Env, nonce: String, signature: Option<BytesN<64>>);
     fn balance(env: Env, id: Address) -> i128;
     fn upgrade(env: Env, new_wasm_hash: BytesN<32>);

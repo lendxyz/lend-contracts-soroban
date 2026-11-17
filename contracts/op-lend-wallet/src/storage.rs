@@ -1,7 +1,7 @@
 use soroban_sdk::{panic_with_error, token, Address, BytesN, Env};
 
 use crate::errors::Error;
-use crate::types::DataKey;
+use crate::types::{DataKey, FactoryClient};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 
@@ -35,15 +35,21 @@ pub fn require_admin(e: &Env) -> Address {
     admin
 }
 
-pub fn read_backend_signer(e: &Env) -> BytesN<32> {
-    match e.storage().instance().get(&DataKey::BackendSigner) {
-        Some(signer) => signer,
+pub fn read_factory(e: &Env) -> Address {
+    match e.storage().instance().get(&DataKey::Factory) {
+        Some(factory) => factory,
         None => panic_with_error!(e, Error::NotInitialized),
     }
 }
 
-pub fn write_backend_signer(e: &Env, signer: &BytesN<32>) {
-    e.storage().instance().set(&DataKey::BackendSigner, signer);
+pub fn write_factory(e: &Env, factory: &Address) {
+    e.storage().instance().set(&DataKey::Factory, factory);
+}
+
+/// The backend key, read from the factory on every check rather than stored
+/// here, so rotating it on the factory rotates it for the wallet too.
+pub fn read_backend_signer(e: &Env) -> BytesN<32> {
+    FactoryClient::new(e, &read_factory(e)).backend_signer()
 }
 
 // --- registry ---

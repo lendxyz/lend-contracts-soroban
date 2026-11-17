@@ -163,6 +163,8 @@ pub fn update_usdc_oracle_address(e: &Env, new_oracle: Address) {
     set_usdc_oracle(e, &new_oracle);
 }
 
+/// Rotates the backend key for the factory and, since they read it from here,
+/// for every op-lend token and the op-lend wallet pointed at this factory.
 pub fn update_backend_signer(e: &Env, new_signer: BytesN<32>) {
     st::require_admin(e);
     st::bump_instance(e);
@@ -188,17 +190,6 @@ pub fn oplend_whitelist_user(e: &Env, op_id: u32, user: Address, state: bool) {
     }
     let op = st::read_op(e, op_id);
     OpLendClient::new(e, &op.op_token).whitelist_user_admin(&user, &state);
-}
-
-pub fn oplend_update_backend_signer(
-    e: &Env,
-    op_id: u32,
-    new_signer: BytesN<32>,
-) {
-    st::require_admin(e);
-    st::bump_instance(e);
-    let op = st::read_op(e, op_id);
-    OpLendClient::new(e, &op.op_token).update_backend_signer(&new_signer);
 }
 
 pub fn oplend_void_nonce(e: &Env, op_id: u32, nonce: String) {

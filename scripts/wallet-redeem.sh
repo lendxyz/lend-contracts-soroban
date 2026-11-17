@@ -123,8 +123,8 @@ NONCE="$(jq -r '.nonce' <<<"$PROOF")"
 SIGNATURE="$(jq -r '.signature' <<<"$PROOF")"
 SIGNER_HEX="$(jq -r '.signer_hex' <<<"$PROOF")"
 
-# 3. The contract verifies against the signer stored at deploy /
-# update_backend_signer. common.sh mirrors it per network, so a mismatch here
+# 3. The wallet verifies against its factory's `backend_signer` (set at deploy /
+# update_backend_signer). common.sh mirrors it per network, so a mismatch here
 # means the wrong key — catch it before burning a nonce on a failed call.
 EXPECTED_HEX="$(strkey_to_hex "$BACKEND_SIGNER")"
 if [ "$SIGNER_HEX" != "$EXPECTED_HEX" ]; then
@@ -132,7 +132,7 @@ if [ "$SIGNER_HEX" != "$EXPECTED_HEX" ]; then
   echo "       derived:  $SIGNER_HEX" >&2
   echo "       expected: $EXPECTED_HEX  (\$BACKEND_SIGNER=$BACKEND_SIGNER)" >&2
   echo "       Set BACKEND_SIGNER_KEY to the right identity, or BACKEND_SIGNER" >&2
-  echo "       if the wallet was updated with update_backend_signer." >&2
+  echo "       if the factory was updated with update-backend-signer.sh." >&2
   exit 1
 fi
 

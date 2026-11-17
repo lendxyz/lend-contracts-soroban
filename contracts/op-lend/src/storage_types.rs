@@ -44,6 +44,7 @@ pub enum DataKey {
     Admin,
     TotalSupply,
     MaxSupply,
-    BackendSigner,
+    /// Factory the backend signer is read from.
+    Factory,
     UsedNonce(String),
 }

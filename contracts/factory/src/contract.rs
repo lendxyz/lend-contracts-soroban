@@ -176,14 +176,6 @@ impl LendFactory {
         admin::oplend_whitelist_user(&env, op_id, user, state);
     }
 
-    pub fn oplend_update_backend_signer(
-        env: Env,
-        op_id: u32,
-        new_signer: BytesN<32>,
-    ) {
-        admin::oplend_update_backend_signer(&env, op_id, new_signer);
-    }
-
     pub fn oplend_void_nonce(env: Env, op_id: u32, nonce: String) {
         admin::oplend_void_nonce(&env, op_id, nonce);
     }
@@ -219,6 +211,13 @@ impl LendFactory {
     }
 
     // --- Getters ---
+
+    /// The backend ed25519 key. op-lend tokens and the op-lend wallet read it
+    /// from here on every signature check, so `update_backend_signer` rotates
+    /// it for all of them at once.
+    pub fn backend_signer(env: Env) -> BytesN<32> {
+        getters::backend_signer(&env)
+    }
 
     pub fn usdc(env: Env) -> Address {
         getters::usdc(&env)

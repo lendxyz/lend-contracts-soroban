@@ -31,9 +31,10 @@ build:
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 WHITELIST=1 DRY_RUN=1
 #   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
-#   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
+#   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...   # factory only; tokens + wallet follow
 #   make upgrade-contract CONTRACT=factory   # in place, same id + state
 #   make upgrade-contract CONTRACT=wallet
+#   make wallet-set-factory                  # after the wallet upgrade / a factory redeploy
 #   make upgrade-contract CONTRACT=oplend OP_ID=5   # via the factory; also sets the hash new ops use
 #
 # Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
@@ -94,6 +95,10 @@ wallet-register-op-lend:
 wallet-redeem:
 	./scripts/wallet-redeem.sh
 
+# Points the wallet at FACTORY_ID, whose backend_signer authorizes redeems.
+wallet-set-factory:
+	./scripts/wallet-set-factory.sh
+
 fund-dummy-usdc:
 	./scripts/fund-dummy-usdc.sh
 
@@ -109,4 +114,4 @@ clean:
 .PHONY: default all test build fmt clean \
 	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
 	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract \
-	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem
+	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem wallet-set-factory

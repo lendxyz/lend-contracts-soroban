@@ -1,4 +1,4 @@
-use soroban_sdk::{contractevent, Address, BytesN, String};
+use soroban_sdk::{contractevent, Address, String};
 
 #[contractevent]
 pub struct Redeemed {
@@ -26,8 +26,8 @@ pub struct OpLendRegistered {
 }
 
 #[contractevent]
-pub struct BackendSignerUpdated {
-    pub new_signer: BytesN<32>,
+pub struct FactoryUpdated {
+    pub factory: Address,
 }
 
 #[contractevent]

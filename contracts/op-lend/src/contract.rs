@@ -9,7 +9,7 @@ use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
 use crate::storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
 use soroban_sdk::{
-    contract, contractevent, contractimpl, panic_with_error,
+    contract, contractclient, contractevent, contractimpl, panic_with_error,
     token::TokenInterface, Address, BytesN, Env, MuxedAddress, String,
 };
 use soroban_token_sdk::events;
@@ -46,11 +46,24 @@ fn read_max_supply(e: &Env) -> i128 {
     e.storage().instance().get(&DataKey::MaxSupply).unwrap_or(0)
 }
 
-fn read_backend_signer(e: &Env) -> BytesN<32> {
-    match e.storage().instance().get(&DataKey::BackendSigner) {
-        Some(signer) => signer,
+/// The one factory function this token calls.
+#[contractclient(name = "FactoryClient")]
+#[allow(dead_code)]
+trait FactoryInterface {
+    fn backend_signer(env: Env) -> BytesN<32>;
+}
+
+fn read_factory(e: &Env) -> Address {
+    match e.storage().instance().get(&DataKey::Factory) {
+        Some(factory) => factory,
         None => panic_with_error!(e, Error::NotInitialized),
     }
+}
+
+/// The backend key, read from the factory on every check rather than stored
+/// here, so rotating it on the factory rotates it for every token.
+fn read_backend_signer(e: &Env) -> BytesN<32> {
+    FactoryClient::new(e, &read_factory(e)).backend_signer()
 }
 
 fn consume_nonce(e: &Env, nonce: &String) {
@@ -93,7 +106,7 @@ impl OpLendToken {
         name: String,
         symbol: String,
         max_supply: i128,
-        backend_signer: BytesN<32>,
+        factory: Address,
     ) {
         if decimal > 6 {
             panic_with_error!(&e, Error::DecimalTooLarge);
@@ -103,9 +116,7 @@ impl OpLendToken {
         write_administrator(&e, &admin);
 
         e.storage().instance().set(&DataKey::MaxSupply, &max_supply);
-        e.storage()
-            .instance()
-            .set(&DataKey::BackendSigner, &backend_signer);
+        e.storage().instance().set(&DataKey::Factory, &factory);
 
         write_metadata(
             &e,
@@ -178,15 +189,14 @@ impl OpLendToken {
         NonceVoided { nonce }.publish(&e);
     }
 
-    pub fn update_backend_signer(e: Env, new_signer: BytesN<32>) {
-        require_admin(&e);
-        e.storage()
-            .instance()
-            .set(&DataKey::BackendSigner, &new_signer);
-    }
-
     pub fn is_whitelisted(e: Env, user: Address) -> bool {
         account::is_whitelisted(&e, &user)
+    }
+
+    /// The factory this token reads the backend signer from. Set by the
+    /// constructor and never changed: nothing can repoint a token's signer.
+    pub fn factory(e: Env) -> Address {
+        read_factory(&e)
     }
 
     pub fn total_supply(e: Env) -> i128 {

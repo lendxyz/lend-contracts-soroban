@@ -76,9 +76,10 @@ pub struct OpLendWallet;
 
 #[contractimpl]
 impl OpLendWallet {
-    pub fn __constructor(e: Env, admin: Address, backend_signer: BytesN<32>) {
+    pub fn __constructor(e: Env, admin: Address, factory: Address) {
+        require_contract(&e, &factory);
         st::write_admin(&e, &admin);
-        st::write_backend_signer(&e, &backend_signer);
+        st::write_factory(&e, &factory);
         st::bump_instance(&e);
     }
 
@@ -117,12 +118,16 @@ impl OpLendWallet {
         events::AdminUpdated { admin, new_admin }.publish(&e);
     }
 
-    pub fn update_backend_signer(e: Env, new_signer: BytesN<32>) {
+    /// Points the wallet at the factory whose `backend_signer` authorizes
+    /// redeems. Needed after upgrading a wallet deployed with a stored
+    /// signer, and whenever the factory is redeployed.
+    pub fn set_factory(e: Env, factory: Address) {
         st::require_admin(&e);
         st::bump_instance(&e);
-        st::write_backend_signer(&e, &new_signer);
+        require_contract(&e, &factory);
+        st::write_factory(&e, &factory);
 
-        events::BackendSignerUpdated { new_signer }.publish(&e);
+        events::FactoryUpdated { factory }.publish(&e);
     }
 
     pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
@@ -239,6 +244,10 @@ impl OpLendWallet {
 
     pub fn backend_signer(e: Env) -> BytesN<32> {
         st::read_backend_signer(&e)
+    }
+
+    pub fn factory(e: Env) -> Address {
+        st::read_factory(&e)
     }
 
     pub fn op_lend(e: Env, op_id: u32) -> Address {

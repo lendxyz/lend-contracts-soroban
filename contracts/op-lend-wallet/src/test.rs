@@ -3,6 +3,7 @@ extern crate std;
 
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
+    contract, contractimpl, symbol_short,
     testutils::{Address as _, Deployer as _},
     vec, Address, Bytes, BytesN, Env, String, Vec,
 };
@@ -43,9 +44,35 @@ fn pubkey(e: &Env, key: &SigningKey) -> BytesN<32> {
     BytesN::from_array(e, &key.verifying_key().to_bytes())
 }
 
+/// Stands in for the factory: serves the backend signer the wallet and the
+/// token read, and lets a test rotate it.
+#[contract]
+pub struct MockFactory;
+
+#[contractimpl]
+impl MockFactory {
+    pub fn __constructor(e: Env, signer: BytesN<32>) {
+        e.storage()
+            .instance()
+            .set(&symbol_short!("signer"), &signer);
+    }
+    pub fn set_signer(e: Env, signer: BytesN<32>) {
+        e.storage()
+            .instance()
+            .set(&symbol_short!("signer"), &signer);
+    }
+    pub fn backend_signer(e: Env) -> BytesN<32> {
+        e.storage()
+            .instance()
+            .get(&symbol_short!("signer"))
+            .unwrap()
+    }
+}
+
 struct Setup<'a> {
     e: Env,
     admin: Address,
+    factory: MockFactoryClient<'a>,
     wallet: OpLendWalletClient<'a>,
     wallet_id: Address,
     op_token: oplend::Client<'a>,
@@ -53,13 +80,14 @@ struct Setup<'a> {
 }
 
 /// A wallet holding `FUNDED` shares of operation `OP_ID`. The mint whitelists
-/// the wallet on the token, which is what lets it transfer out at all.
+/// the wallet on the token, which is what lets it transfer out at all. Both
+/// read the backend signer from the same (mock) factory.
 fn setup<'a>() -> Setup<'a> {
     let e = Env::default();
     e.mock_all_auths();
 
     let admin = Address::generate(&e);
-    let signer = pubkey(&e, &signer_key());
+    let factory_id = e.register(MockFactory, (pubkey(&e, &signer_key()),));
 
     let op_token_id = e.register(
         oplend::WASM,
@@ -69,18 +97,20 @@ fn setup<'a>() -> Setup<'a> {
             String::from_str(&e, "Alpha shares"),
             String::from_str(&e, "ALPHA"),
             MAX_SUPPLY,
-            signer.clone(),
+            factory_id.clone(),
         ),
     );
     let op_token = oplend::Client::new(&e, &op_token_id);
 
-    let wallet_id = e.register(OpLendWallet, (admin.clone(), signer));
+    let wallet_id =
+        e.register(OpLendWallet, (admin.clone(), factory_id.clone()));
     let wallet = OpLendWalletClient::new(&e, &wallet_id);
 
     wallet.register_op_lend(&OP_ID, &op_token_id);
     op_token.mint(&wallet_id, &FUNDED);
 
     Setup {
+        factory: MockFactoryClient::new(&e, &factory_id),
         e,
         admin,
         wallet,
@@ -500,16 +530,51 @@ fn test_op_lend_getters_fail_for_an_unregistered_operation() {
     );
 }
 
+/// AUDIT OpLendWallet C3: the backend key is read from the factory on every
+/// check, so rotating it there rotates it for the wallet (and the token) at
+/// once; the old key stops working.
 #[test]
-fn test_update_backend_signer_rotates_authorization() {
+fn test_backend_signer_follows_the_factory() {
     let s = setup();
     let user = whitelisted_user(&s);
 
-    s.wallet
-        .update_backend_signer(&pubkey(&s.e, &rotated_key()));
+    s.factory.set_signer(&pubkey(&s.e, &rotated_key()));
     assert_eq!(s.wallet.backend_signer(), pubkey(&s.e, &rotated_key()));
 
     let n = nonce(&s.e, "rotated");
+    let sign = |key: &SigningKey| {
+        sign_redeem_with(&s.e, key, &s.wallet_id, OP_ID, &user, 250, &n)
+    };
+    assert!(s
+        .wallet
+        .try_redeem(&OP_ID, &user, &250, &n, &sign(&signer_key()))
+        .is_err());
+    s.wallet
+        .redeem(&OP_ID, &user, &250, &n, &sign(&rotated_key()));
+
+    assert_eq!(s.op_token.balance(&user), 250);
+}
+
+/// `set_factory` repoints the wallet (after an upgrade from a stored-signer
+/// version, or a factory redeploy). Admin-only, contract addresses only.
+#[test]
+fn test_set_factory_switches_the_signer_source() {
+    let s = setup();
+    let user = whitelisted_user(&s);
+    let new_factory =
+        s.e.register(MockFactory, (pubkey(&s.e, &rotated_key()),));
+
+    assert_eq!(
+        s.wallet
+            .try_set_factory(&Address::from_str(&s.e, ACCOUNT_STRKEY)),
+        Err(Ok(Error::NotAContract.into()))
+    );
+
+    s.wallet.set_factory(&new_factory);
+    assert_eq!(s.wallet.factory(), new_factory);
+    assert_eq!(s.wallet.backend_signer(), pubkey(&s.e, &rotated_key()));
+
+    let n = nonce(&s.e, "new-factory");
     let sig = sign_redeem_with(
         &s.e,
         &rotated_key(),
@@ -520,8 +585,11 @@ fn test_update_backend_signer_rotates_authorization() {
         &n,
     );
     s.wallet.redeem(&OP_ID, &user, &250, &n, &sig);
-
     assert_eq!(s.op_token.balance(&user), 250);
+
+    s.e.set_auths(&[]);
+    assert!(s.wallet.try_set_factory(&s.factory.address).is_err());
+    assert_eq!(s.wallet.factory(), new_factory);
 }
 
 #[test]
