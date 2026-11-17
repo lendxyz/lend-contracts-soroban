@@ -77,16 +77,18 @@ pub fn create_operation(
     op_token
 }
 
-fn set_flag(e: &Env, id: u32, flag: u32, state: bool) -> bool {
+/// Sets an operation flag, failing if it already has the requested value: a
+/// repeated start / cancel / pause / resume is a mistake, and would otherwise
+/// emit an event for a change that never happened.
+fn set_flag(e: &Env, id: u32, flag: u32, state: bool) {
     st::require_admin(e);
     st::bump_instance(e);
     let mut op = st::read_op(e, id);
     if op.flag(flag) == state {
-        return false;
+        panic_with_error!(e, Error::StateUnchanged);
     }
     op.set_flag(flag, state);
     st::write_op(e, id, &op);
-    true
 }
 
 pub fn cancel_operation(e: &Env, id: u32) {

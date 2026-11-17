@@ -36,4 +36,5 @@ pub enum Error {
     InvalidPrice = 27,
     RaiseOverflow = 28,
     ZeroAddressNotAllowed = 29,
+    StateUnchanged = 30,
 }

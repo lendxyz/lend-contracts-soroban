@@ -854,6 +854,34 @@ fn test_flags_are_independent() {
     assert_eq!(s.factory.funding_progress(&id), 100);
 }
 
+/// AUDIT Factory C15: start / cancel / pause / resume fail when the operation
+/// is already in the requested state, instead of emitting an event for a
+/// change that never happened.
+#[test]
+fn test_repeated_state_change_fails() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    let unchanged = Err(Ok(Error::StateUnchanged.into()));
+
+    // Resuming an operation that was never paused.
+    assert_eq!(s.factory.try_pause_funding(&id, &false), unchanged);
+
+    s.factory.start_operation(&id);
+    assert_eq!(s.factory.try_start_operation(&id), unchanged);
+
+    s.factory.pause_funding(&id, &true);
+    assert_eq!(s.factory.try_pause_funding(&id, &true), unchanged);
+    s.factory.pause_funding(&id, &false);
+    assert_eq!(s.factory.try_pause_funding(&id, &false), unchanged);
+
+    s.factory.cancel_operation(&id);
+    assert_eq!(s.factory.try_cancel_operation(&id), unchanged);
+
+    assert!(s.factory.operation_started(&id));
+    assert!(!s.factory.funding_paused(&id));
+    assert!(s.factory.operation_canceled(&id));
+}
+
 /// Independent reconstruction of the `FIAT_INVEST` payload — deliberately built
 /// with naive appends rather than the contract's buffer layout, so an off-by-one
 /// in `build_fiat_invest_message` fails here instead of rejecting every backend

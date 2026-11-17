@@ -184,3 +184,16 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 - Both now fail with `NotInitialized`, like the other config reads. The
   constructor always writes both (and `update_oracle_address` rewrites the
   oracle one), so only a broken setup can reach this.
+
+## Factory: start / cancel / pause check the current state
+
+> Addresses **Factory C15**
+
+- `start_operation`, `cancel_operation` and `pause_funding` now fail with the
+  new `StateUnchanged` (30) when the operation is already in the requested
+  state (already started, already canceled, already paused, or resuming one
+  that is not paused). Before, they succeeded and emitted
+  `OperationStarted` / `OperationCanceled` / `OperationPaused` /
+  `OperationResumed` for a change that never happened.
+- The check lives in the shared `set_flag`, which already detected the no-op
+  but returned a `bool` every caller ignored.
