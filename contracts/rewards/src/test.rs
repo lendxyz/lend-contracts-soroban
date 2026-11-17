@@ -250,6 +250,52 @@ fn test_claim_op_epochs_rejects_a_negative_epoch() {
     );
 }
 
+/// AUDIT Rewards T1: claims are kept apart per operation and per user. Two
+/// users each claim epoch 1 of two operations; every claim pays its own amount,
+/// and neither a first claim nor another operation's proof gets in the way.
+#[test]
+fn test_claims_are_separate_per_operation_and_user() {
+    const OP_A: u32 = 2;
+    const OP_B: u32 = 3;
+    let s = setup();
+    let u0 = Address::generate(&s.e);
+    let u1 = Address::generate(&s.e);
+    let usdc = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    s.usdc.mint(&s.admin, &1_000);
+
+    // Different amounts per operation, so a mix-up would show.
+    let (root_a, a0, a1) = tree2(&s.e, &u0, 100, &u1, 200);
+    let (root_b, b0, b1) = tree2(&s.e, &u0, 30, &u1, 40);
+    s.rewards
+        .distribute_op_rewards(&OP_A, &EPOCH, &root_a, &300);
+    s.rewards.distribute_op_rewards(&OP_B, &EPOCH, &root_b, &70);
+
+    // An operation-A proof is no good on operation B.
+    assert_eq!(
+        s.rewards.try_claim_op_epoch(&OP_B, &u0, &EPOCH, &100, &a0),
+        Err(Ok(Error::InvalidProof.into()))
+    );
+
+    s.rewards.claim_op_epoch(&OP_A, &u0, &EPOCH, &100, &a0);
+    s.rewards.claim_op_epoch(&OP_B, &u0, &EPOCH, &30, &b0);
+    s.rewards.claim_op_epoch(&OP_A, &u1, &EPOCH, &200, &a1);
+    s.rewards.claim_op_epoch(&OP_B, &u1, &EPOCH, &40, &b1);
+
+    assert_eq!(usdc.balance(&u0), 130);
+    assert_eq!(usdc.balance(&u1), 240);
+    assert_eq!(usdc.balance(&s.rewards_id), 0);
+    for op in [OP_A, OP_B] {
+        assert!(s.rewards.op_claimed(&op, &EPOCH, &u0));
+        assert!(s.rewards.op_claimed(&op, &EPOCH, &u1));
+    }
+
+    // Each (operation, epoch, user) still pays only once.
+    assert_eq!(
+        s.rewards.try_claim_op_epoch(&OP_A, &u0, &EPOCH, &100, &a0),
+        Err(Ok(Error::AlreadyClaimed.into()))
+    );
+}
+
 #[test]
 fn test_verify_helpers() {
     let s = setup();

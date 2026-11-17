@@ -391,3 +391,13 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `emergency_withdraw`. Another reward token means another rewards contract.
 - The deployed rewards contract is upgraded in place: its stored token stays
   as it is and simply can no longer change.
+
+## Rewards: multi-operation, multi-user test
+
+> Addresses **Rewards T1**
+
+- New `test_claims_are_separate_per_operation_and_user`: two operations with
+  different amounts, two users each claiming epoch 1 on both. Every claim
+  succeeds and pays its own amount (130 and 240 in total), all four are
+  recorded as claimed, an operation-A proof is refused on operation B, and a
+  repeated claim is refused.
