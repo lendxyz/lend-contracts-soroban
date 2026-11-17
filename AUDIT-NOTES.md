@@ -268,3 +268,28 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   in, which `usdc_to_refund` need not match.
 - Errors `NoParticipation` (19) and `NoOpLendBalance` (20) are retired (codes
   not reused).
+
+## Factory: missing tests added
+
+> Addresses **Factory T1**
+
+- The two fixed oracle mocks are replaced by one `MockFeed` that answers only
+  for its own symbol and can drop, change or backdate its price; every
+  existing test now also checks the factory asks for `EUR` / `USDC`.
+- New tests in `contracts/factory/src/test.rs`:
+  - `test_non_round_rate_is_charged_as_quoted`: 1.08345678912345 USD/EUR;
+    quotes, charges and the round trip match values computed independently.
+    (A purchase rounding to zero: `test_order_rounding_to_zero_fails`, C13.)
+  - `test_oracle_failures_block_purchases_and_quotes`: no price, zero,
+    negative, older than 24 h on the EUR feed (`invest`, `fiat_invest`,
+    `get_amount_in`, `get_amount_out`) and on the USDC feed (`invest`);
+    exactly 24 h is accepted.
+  - `test_invest_rejects_tampered_signatures` /
+    `test_fiat_invest_rejects_tampered_signatures`: another key, or the right
+    signature with a different amount, user, operation or holder; the nonce
+    stays usable.
+  - `test_refunds_after_cancel`: started, partly sold, canceled; `invest` and
+    `fiat_invest` fail, `refund_user` + `batch_refund_users` return all USDC.
+  - `test_backend_key_rotation`: after `update_backend_signer` the factory
+    takes only the new key while share tokens keep theirs until
+    `oplend_update_backend_signer`.

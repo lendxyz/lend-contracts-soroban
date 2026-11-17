@@ -6,7 +6,7 @@ use soroban_sdk::{
     contract, contractimpl, symbol_short,
     testutils::{Address as _, Deployer as _, Events as _, Ledger as _},
     token::StellarAssetClient,
-    Address, Bytes, BytesN, Env, Event as _, String,
+    Address, Bytes, BytesN, Env, Event as _, String, Symbol,
 };
 
 use crate::contract::{LendFactory, LendFactoryClient};
@@ -22,43 +22,42 @@ mod oplend {
     );
 }
 
-// --- Mock Reflector oracle: EUR/USD = 1.1, 14 decimals ---
+/// Mock Reflector feed, 14 decimals, answering only for the symbol it was
+/// deployed with (so a factory asking for the wrong asset gets no price).
+/// Tests move the price, remove it, or backdate it to exercise the factory's
+/// oracle checks.
 #[contract]
-pub struct MockOracle;
+pub struct MockFeed;
 
 #[contractimpl]
-impl MockOracle {
-    pub fn lastprice(e: Env, _asset: Asset) -> Option<PriceData> {
-        Some(PriceData {
-            price: 110_000_000_000_000, // 1.1 * 1e14
-            timestamp: e.ledger().timestamp(),
-        })
-    }
-    pub fn decimals(_e: Env) -> u32 {
-        14
-    }
-}
-
-/// Mock Reflector CEX & DEX feed for USDC/USD, 14 decimals. Starts at par;
-/// `set_price` simulates a depeg. Answers only for the `USDC` symbol, so a
-/// factory asking for anything else gets no price.
-#[contract]
-pub struct MockUsdcOracle;
-
-#[contractimpl]
-impl MockUsdcOracle {
-    pub fn set_price(e: Env, price: i128) {
+impl MockFeed {
+    pub fn __constructor(e: Env, symbol: Symbol, price: i128) {
+        e.storage().instance().set(&symbol_short!("sym"), &symbol);
         e.storage().instance().set(&symbol_short!("price"), &price);
     }
+    pub fn set_price(e: Env, price: i128) {
+        e.storage().instance().set(&symbol_short!("price"), &price);
+        e.storage().instance().remove(&symbol_short!("none"));
+    }
+    /// The feed has no price for its symbol any more.
+    pub fn remove_price(e: Env) {
+        e.storage().instance().set(&symbol_short!("none"), &true);
+    }
+    /// Reports its price as published `age` seconds ago.
+    pub fn set_age(e: Env, age: u64) {
+        e.storage().instance().set(&symbol_short!("age"), &age);
+    }
     pub fn lastprice(e: Env, asset: Asset) -> Option<PriceData> {
+        let st = e.storage().instance();
+        let symbol: Symbol = st.get(&symbol_short!("sym")).unwrap();
+        let removed = st.has(&symbol_short!("none"));
         match asset {
-            Asset::Other(s) if s == symbol_short!("USDC") => Some(PriceData {
-                price: e
-                    .storage()
-                    .instance()
-                    .get(&symbol_short!("price"))
-                    .unwrap_or(100_000_000_000_000), // 1.0 * 1e14
-                timestamp: e.ledger().timestamp(),
+            Asset::Other(s) if s == symbol && !removed => Some(PriceData {
+                price: st.get(&symbol_short!("price")).unwrap(),
+                timestamp: e
+                    .ledger()
+                    .timestamp()
+                    .saturating_sub(st.get(&symbol_short!("age")).unwrap_or(0)),
             }),
             _ => None,
         }
@@ -66,6 +65,16 @@ impl MockUsdcOracle {
     pub fn decimals(_e: Env) -> u32 {
         14
     }
+}
+
+/// EUR/USD forex feed at 1.1.
+fn eur_feed(e: &Env) -> Address {
+    e.register(MockFeed, (symbol_short!("EUR"), 110_000_000_000_000_i128))
+}
+
+/// USDC/USD feed at par.
+fn usdc_feed(e: &Env) -> Address {
+    e.register(MockFeed, (symbol_short!("USDC"), 100_000_000_000_000_i128))
 }
 
 /// A USDC whose scale differs from the 7-decimal SAC the rest of the tests use.
@@ -94,7 +103,8 @@ struct Setup<'a> {
     factory_id: Address,
     usdc: StellarAssetClient<'a>,
     usdc_addr: Address,
-    usdc_oracle: MockUsdcOracleClient<'a>,
+    oracle: MockFeedClient<'a>,
+    usdc_oracle: MockFeedClient<'a>,
 }
 
 fn setup<'a>() -> Setup<'a> {
@@ -113,14 +123,15 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
     let usdc_addr = usdc_sac.address();
     let usdc = StellarAssetClient::new(&e, &usdc_addr);
 
-    let oracle_addr = e.register(MockOracle, ());
+    let oracle_addr = eur_feed(&e);
 
     let (factory_id, usdc_oracle) =
         register_factory(&e, &admin, &usdc_addr, &oracle_addr, first_op_id);
     let factory = LendFactoryClient::new(&e, &factory_id);
 
     Setup {
-        usdc_oracle: MockUsdcOracleClient::new(&e, &usdc_oracle),
+        oracle: MockFeedClient::new(&e, &oracle_addr),
+        usdc_oracle: MockFeedClient::new(&e, &usdc_oracle),
         e,
         factory,
         factory_id,
@@ -141,7 +152,7 @@ fn register_factory(
     let signer =
         BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
     let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
-    let usdc_oracle = e.register(MockUsdcOracle, ());
+    let usdc_oracle = usdc_feed(e);
     let factory = e.register(
         LendFactory,
         (
@@ -160,6 +171,28 @@ fn register_factory(
 /// Independent reconstruction of the `ONCHAIN_INVEST` payload. Keep it naive
 /// (plain appends, not the contract's buffer layout) so a byte-layout change in
 /// `build_invest_message` breaks the tests instead of every backend signature.
+fn invest_msg(
+    e: &Env,
+    factory_id: &Address,
+    id: u32,
+    user: &Address,
+    amount: i128,
+    nonce: &String,
+) -> Bytes {
+    let mut msg = Bytes::from_slice(e, b"ONCHAIN_INVEST");
+    msg.append(&Bytes::from(factory_id.to_string()));
+    msg.append(&Bytes::from_slice(e, &id.to_be_bytes()));
+    msg.append(&Bytes::from(user.to_string()));
+    msg.append(&Bytes::from_slice(e, &amount.to_be_bytes()));
+    msg.append(&Bytes::from(nonce.clone()));
+    msg
+}
+
+fn sign_with(e: &Env, key: &SigningKey, msg: &Bytes) -> BytesN<64> {
+    let v: std::vec::Vec<u8> = msg.iter().collect();
+    BytesN::from_array(e, &key.sign(&v).to_bytes())
+}
+
 fn sign_invest(
     e: &Env,
     factory_id: &Address,
@@ -168,14 +201,8 @@ fn sign_invest(
     amount: i128,
     nonce: &String,
 ) -> BytesN<64> {
-    let mut msg = Bytes::from_slice(e, b"ONCHAIN_INVEST");
-    msg.append(&Bytes::from(factory_id.to_string()));
-    msg.append(&Bytes::from_slice(e, &id.to_be_bytes()));
-    msg.append(&Bytes::from(user.to_string()));
-    msg.append(&Bytes::from_slice(e, &amount.to_be_bytes()));
-    msg.append(&Bytes::from(nonce.clone()));
-    let v: std::vec::Vec<u8> = msg.iter().collect();
-    BytesN::from_array(e, &signer_key().sign(&v).to_bytes())
+    let msg = invest_msg(e, factory_id, id, user, amount, nonce);
+    sign_with(e, &signer_key(), &msg)
 }
 
 fn create_op(s: &Setup, shares: i128) -> (u32, Address) {
@@ -225,7 +252,7 @@ fn test_first_op_id_zero_is_rejected() {
     let usdc = e
         .register_stellar_asset_contract_v2(Address::generate(&e))
         .address();
-    let oracle = e.register(MockOracle, ());
+    let oracle = eur_feed(&e);
 
     register_factory(&e, &Address::generate(&e), &usdc, &oracle, 0);
 }
@@ -342,7 +369,7 @@ fn test_upgrade_replaces_the_executable() {
 
 /// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
 fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
-    let oracle = e.register(MockOracle, ());
+    let oracle = eur_feed(e);
     let (factory_id, _) =
         register_factory(e, &Address::generate(e), usdc, &oracle, 1);
     LendFactoryClient::new(e, &factory_id)
@@ -1012,6 +1039,25 @@ fn test_repeated_state_change_fails() {
 /// with naive appends rather than the contract's buffer layout, so an off-by-one
 /// in `build_fiat_invest_message` fails here instead of rejecting every backend
 /// signature in production.
+fn fiat_msg(
+    e: &Env,
+    factory_id: &Address,
+    id: u32,
+    user: &Address,
+    holder: &Address,
+    amount: i128,
+    nonce: &String,
+) -> Bytes {
+    let mut msg = Bytes::from_slice(e, b"FIAT_INVEST");
+    msg.append(&Bytes::from(factory_id.to_string()));
+    msg.append(&Bytes::from_slice(e, &id.to_be_bytes()));
+    msg.append(&Bytes::from(user.to_string()));
+    msg.append(&Bytes::from(holder.to_string()));
+    msg.append(&Bytes::from_slice(e, &amount.to_be_bytes()));
+    msg.append(&Bytes::from(nonce.clone()));
+    msg
+}
+
 fn sign_fiat_invest(
     e: &Env,
     factory_id: &Address,
@@ -1021,15 +1067,8 @@ fn sign_fiat_invest(
     amount: i128,
     nonce: &String,
 ) -> BytesN<64> {
-    let mut msg = Bytes::from_slice(e, b"FIAT_INVEST");
-    msg.append(&Bytes::from(factory_id.to_string()));
-    msg.append(&Bytes::from_slice(e, &id.to_be_bytes()));
-    msg.append(&Bytes::from(user.to_string()));
-    msg.append(&Bytes::from(holder.to_string()));
-    msg.append(&Bytes::from_slice(e, &amount.to_be_bytes()));
-    msg.append(&Bytes::from(nonce.clone()));
-    let v: std::vec::Vec<u8> = msg.iter().collect();
-    BytesN::from_array(e, &signer_key().sign(&v).to_bytes())
+    let msg = fiat_msg(e, factory_id, id, user, holder, amount, nonce);
+    sign_with(e, &signer_key(), &msg)
 }
 
 #[test]
@@ -1223,4 +1262,305 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
         .try_fiat_refund(&id, &fiat_user, &holder, &10)
         .is_err());
     assert_eq!(s.factory.fiat_shares(&id, &fiat_user), 60);
+}
+
+// --- AUDIT Factory T1: missing tests ---
+// (A purchase whose USDC cost rounds to zero is covered by
+// `test_order_rounding_to_zero_fails`.)
+
+/// A rate with many decimals: 1.08345678912345 USD/EUR normalizes to 1.083456,
+/// and what `invest` charges is exactly what `get_amount_in` quotes. Converting
+/// a cost back to shares rounds down, never in the buyer's favour. Expected
+/// values computed independently of the contract.
+#[test]
+fn test_non_round_rate_is_charged_as_quoted() {
+    let s = setup();
+    s.oracle.set_price(&108_345_678_912_345);
+    let (id, _) = create_op(&s, 10_000_000);
+    s.factory.start_operation(&id);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+
+    // One whole share at 1 EUR: 1.083456 USDC = 10_834_560 base units.
+    assert_eq!(s.factory.get_amount_in(&id, &1_000_000), 10_834_560);
+    assert_eq!(s.factory.get_amount_out(&id, &10_834_560), 1_000_000);
+    // 0.333333 share: the cost truncates, and so does the way back.
+    assert_eq!(s.factory.get_amount_in(&id, &333_333), 3_611_516);
+    assert_eq!(s.factory.get_amount_out(&id, &3_611_516), 333_332);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &100_000_000);
+    invest_as(&s, id, &user, 1_000_000, "whole");
+    invest_as(&s, id, &user, 333_333, "third");
+    assert_eq!(
+        usdc_tok.balance(&user),
+        100_000_000 - 10_834_560 - 3_611_516
+    );
+    assert_eq!(s.factory.usdc_raised(&id), 10_834_560 + 3_611_516);
+}
+
+/// Every way the EUR/USD feed can fail stops both purchase paths and both
+/// quotes; a USDC/USD feed failure stops `invest` (the only path that reads
+/// it). A price exactly 24 h old is still accepted.
+#[test]
+fn test_oracle_failures_block_purchases_and_quotes() {
+    type Break = fn(&MockFeedClient);
+    let failures: [(Break, Error); 4] = [
+        (|f| f.remove_price(), Error::OracleNoPrice),
+        (|f| f.set_price(&0), Error::OracleInvalidPrice),
+        (|f| f.set_price(&-1), Error::OracleInvalidPrice),
+        (|f| f.set_age(&86_401), Error::OracleStalePrice),
+    ];
+
+    for (break_feed, expected) in failures {
+        let s = setup();
+        let (id, _) = create_op(&s, 1000);
+        s.factory.start_operation(&id);
+        let user = Address::generate(&s.e);
+        let holder = Address::generate(&s.e);
+        s.usdc.mint(&user, &10_000);
+        let expected = Some(Ok(expected.into()));
+        let try_invest = |nonce: &str| {
+            let nonce = String::from_str(&s.e, nonce);
+            let sig = sign_invest(&s.e, &s.factory_id, id, &user, 10, &nonce);
+            s.factory.try_invest(&user, &id, &10, &nonce, &sig).err()
+        };
+
+        break_feed(&s.oracle);
+        assert_eq!(try_invest("eur"), expected);
+        let nonce = String::from_str(&s.e, "fiat");
+        let sig = sign_fiat_invest(
+            &s.e,
+            &s.factory_id,
+            id,
+            &user,
+            &holder,
+            10,
+            &nonce,
+        );
+        assert_eq!(
+            s.factory
+                .try_fiat_invest(&id, &10, &user, &holder, &nonce, &sig)
+                .err(),
+            expected
+        );
+        assert_eq!(s.factory.try_get_amount_in(&id, &10).err(), expected);
+        assert_eq!(s.factory.try_get_amount_out(&id, &110).err(), expected);
+
+        // Restore the EUR feed; break the USDC one instead.
+        s.oracle.set_price(&110_000_000_000_000);
+        s.oracle.set_age(&0);
+        break_feed(&s.usdc_oracle);
+        assert_eq!(try_invest("usdc"), expected);
+        assert_eq!(s.factory.get_amount_in(&id, &10), 110);
+        assert_eq!(s.factory.funding_progress(&id), 0);
+    }
+
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.oracle.set_age(&86_400);
+    s.usdc_oracle.set_age(&86_400);
+    assert_eq!(s.factory.get_amount_in(&id, &10), 110);
+}
+
+/// `invest` only accepts an approval signed by the backend key over exactly
+/// this operation, user and amount. A rejected one leaves the nonce unspent.
+#[test]
+fn test_invest_rejects_tampered_signatures() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    let (other_op, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    s.factory.start_operation(&other_op);
+    let user = Address::generate(&s.e);
+    let other_user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    s.usdc.mint(&other_user, &10_000);
+    let nonce = String::from_str(&s.e, "n");
+    let msg = invest_msg(&s.e, &s.factory_id, id, &user, 100, &nonce);
+    let sig = sign_with(&s.e, &signer_key(), &msg);
+    let forged = sign_with(&s.e, &SigningKey::from_bytes(&[7u8; 32]), &msg);
+
+    // Another key, then the right signature over a different amount, user or
+    // operation.
+    assert!(s
+        .factory
+        .try_invest(&user, &id, &100, &nonce, &forged)
+        .is_err());
+    assert!(s
+        .factory
+        .try_invest(&user, &id, &101, &nonce, &sig)
+        .is_err());
+    assert!(s
+        .factory
+        .try_invest(&other_user, &id, &100, &nonce, &sig)
+        .is_err());
+    assert!(s
+        .factory
+        .try_invest(&user, &other_op, &100, &nonce, &sig)
+        .is_err());
+    assert_eq!(s.factory.funding_progress(&id), 0);
+    assert_eq!(s.factory.funding_progress(&other_op), 0);
+
+    s.factory.invest(&user, &id, &100, &nonce, &sig);
+    assert_eq!(s.factory.funding_progress(&id), 100);
+}
+
+/// Same for `fiat_invest`, which also binds the share holder.
+#[test]
+fn test_fiat_invest_rejects_tampered_signatures() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    let (other_op, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    s.factory.start_operation(&other_op);
+    let user = Address::generate(&s.e);
+    let holder = Address::generate(&s.e);
+    let other = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "n");
+    let msg = fiat_msg(&s.e, &s.factory_id, id, &user, &holder, 100, &nonce);
+    let sig = sign_with(&s.e, &signer_key(), &msg);
+    let forged = sign_with(&s.e, &SigningKey::from_bytes(&[7u8; 32]), &msg);
+    let f = &s.factory;
+
+    assert!(f
+        .try_fiat_invest(&id, &100, &user, &holder, &nonce, &forged)
+        .is_err());
+    assert!(f
+        .try_fiat_invest(&id, &101, &user, &holder, &nonce, &sig)
+        .is_err());
+    assert!(f
+        .try_fiat_invest(&id, &100, &other, &holder, &nonce, &sig)
+        .is_err());
+    assert!(f
+        .try_fiat_invest(&id, &100, &user, &other, &nonce, &sig)
+        .is_err());
+    assert!(f
+        .try_fiat_invest(&other_op, &100, &user, &holder, &nonce, &sig)
+        .is_err());
+    assert_eq!(f.funding_progress(&id), 0);
+    assert_eq!(f.funding_progress(&other_op), 0);
+
+    f.fiat_invest(&id, &100, &user, &holder, &nonce, &sig);
+    assert_eq!(f.funding_progress(&id), 100);
+}
+
+/// A started, partly sold operation is canceled: new purchases fail, and
+/// `refund_user` / `batch_refund_users` return every buyer's USDC.
+#[test]
+fn test_refunds_after_cancel() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+
+    let buyers = [
+        (Address::generate(&s.e), 100_i128, 1100_i128),
+        (Address::generate(&s.e), 200, 2200),
+        (Address::generate(&s.e), 50, 550),
+    ];
+    for (i, (user, shares, _)) in buyers.iter().enumerate() {
+        s.usdc.mint(user, &10_000);
+        invest_as(&s, id, user, *shares, &std::format!("b{i}"));
+    }
+    assert_eq!(s.factory.funding_progress(&id), 350);
+
+    s.factory.cancel_operation(&id);
+
+    let late = Address::generate(&s.e);
+    s.usdc.mint(&late, &10_000);
+    let nonce = String::from_str(&s.e, "late");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &late, 10, &nonce);
+    assert_eq!(
+        s.factory.try_invest(&late, &id, &10, &nonce, &sig).err(),
+        Some(Ok(Error::OperationCanceled.into()))
+    );
+    let holder = Address::generate(&s.e);
+    let sig =
+        sign_fiat_invest(&s.e, &s.factory_id, id, &late, &holder, 10, &nonce);
+    assert_eq!(
+        s.factory
+            .try_fiat_invest(&id, &10, &late, &holder, &nonce, &sig)
+            .err(),
+        Some(Ok(Error::OperationCanceled.into()))
+    );
+
+    let (first, shares, usdc) = &buyers[0];
+    s.factory.refund_user(&id, first, shares, usdc);
+    let batch = soroban_sdk::vec![
+        &s.e,
+        RefundEntry {
+            user: buyers[1].0.clone(),
+            shares_to_burn: buyers[1].1,
+            usdc_to_refund: buyers[1].2,
+        },
+        RefundEntry {
+            user: buyers[2].0.clone(),
+            shares_to_burn: buyers[2].1,
+            usdc_to_refund: buyers[2].2,
+        }
+    ];
+    s.factory.batch_refund_users(&id, &batch);
+
+    for (user, _, _) in buyers.iter() {
+        assert_eq!(usdc_tok.balance(user), 10_000);
+        assert_eq!(op_token.balance(user), 0);
+    }
+    assert_eq!(usdc_tok.balance(&s.factory_id), 0);
+    assert_eq!(s.factory.funding_progress(&id), 0);
+    assert_eq!(s.factory.usdc_raised(&id), 0);
+}
+
+/// After `update_backend_signer` the factory accepts only the new key, while
+/// existing share tokens keep their own signer until
+/// `oplend_update_backend_signer` rotates it too.
+#[test]
+fn test_backend_key_rotation() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+    let new_key = SigningKey::from_bytes(&[10u8; 32]);
+    let new_pub = BytesN::from_array(&s.e, &new_key.verifying_key().to_bytes());
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+
+    s.factory.update_backend_signer(&new_pub);
+
+    let nonce = String::from_str(&s.e, "inv");
+    let msg = invest_msg(&s.e, &s.factory_id, id, &user, 10, &nonce);
+    let old_sig = sign_with(&s.e, &signer_key(), &msg);
+    let new_sig = sign_with(&s.e, &new_key, &msg);
+    assert!(s
+        .factory
+        .try_invest(&user, &id, &10, &nonce, &old_sig)
+        .is_err());
+    s.factory.invest(&user, &id, &10, &nonce, &new_sig);
+
+    // The share token's whitelist message: token ‖ user ‖ nonce.
+    let whitelist_msg = |who: &Address, nonce: &String| {
+        let mut msg = Bytes::from(op_addr.to_string());
+        msg.append(&Bytes::from(who.to_string()));
+        msg.append(&Bytes::from(nonce.clone()));
+        msg
+    };
+
+    // The token still trusts the old key: the factory's rotation is its own.
+    let early = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "wl-1");
+    let sig = sign_with(&s.e, &signer_key(), &whitelist_msg(&early, &nonce));
+    op_token.whitelist_user(&early, &nonce, &sig);
+    assert!(op_token.is_whitelisted(&early));
+
+    s.factory.oplend_update_backend_signer(&id, &new_pub);
+
+    let late = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "wl-2");
+    let msg = whitelist_msg(&late, &nonce);
+    let old_sig = sign_with(&s.e, &signer_key(), &msg);
+    assert!(op_token
+        .try_whitelist_user(&late, &nonce, &old_sig)
+        .is_err());
+    op_token.whitelist_user(&late, &nonce, &sign_with(&s.e, &new_key, &msg));
+    assert!(op_token.is_whitelisted(&late));
 }
