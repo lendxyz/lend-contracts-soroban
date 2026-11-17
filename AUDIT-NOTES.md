@@ -37,7 +37,7 @@ the backend signature carrying it can never be used.
 
 ## Factory: predeposit / gift / claim removed
 
-> Addresses **Factory C3** and **Factory C6**
+> Addresses **Factory C3**, **Factory C6** and **Factory C7**
 
 The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
