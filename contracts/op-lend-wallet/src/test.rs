@@ -93,7 +93,6 @@ fn setup<'a>() -> Setup<'a> {
         oplend::WASM,
         (
             admin.clone(),
-            6u32,
             String::from_str(&e, "Alpha shares"),
             String::from_str(&e, "ALPHA"),
             MAX_SUPPLY,

@@ -140,8 +140,8 @@ enforce the legal framework for tokenized securities:
   spender but the admin (`NotAdmin`).
 - **Admin controls** — `set_admin`, `upgrade`.
 
-Constructor parameters: `admin`, `decimal` (≤ 6), `name`, `symbol`,
-`max_supply`, `factory`. The backend signer is read from `factory` on every
+Constructor parameters: `admin`, `name`, `symbol`, `max_supply`, `factory`
+(decimals are fixed at 6). The backend signer is read from `factory` on every
 check, never stored; `factory` is fixed at deploy and cannot be changed. In
 production the Factory is both `admin` and `factory`,
 and `max_supply` is the operation's `total_shares`.
@@ -259,7 +259,7 @@ gated. Change the feed with `update_usdc_oracle_address`.
 
 Everything internal is 6-decimal: `eur_per_shares`, `total_shares`,
 `funding_progress`, the normalized oracle price, and the op-lend share token
-(the factory passes `6` to its constructor, which rejects anything higher).
+(the factory passes `6` to its constructor, which rejects any other value).
 
 The one exception is the leg that moves USDC. **Circle's USDC is a classic
 Stellar asset behind a SAC, so it reports 7 decimals**, and the testnet
@@ -373,7 +373,7 @@ fn backend_signer() -> BytesN<32>                          // read by op-lend to
 ### OpLend token (`OpLendToken`)
 
 ```rust
-fn __constructor(admin, decimal: u32, name: String, symbol: String, max_supply: i128, factory: Address)
+fn __constructor(admin, name: String, symbol: String, max_supply: i128, factory: Address)  // decimals fixed at 6
 
 // SEP-41 / TokenInterface
 fn allowance(from, spender) -> i128

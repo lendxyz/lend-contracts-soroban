@@ -97,21 +97,21 @@ pub struct NonceVoided {
     nonce: String,
 }
 
+/// Share decimals. Fixed rather than a constructor argument: the factory prices
+/// shares in a 6-decimal unit and never reads `decimals()`, so any other value
+/// would misstate every balance.
+const DECIMALS: u32 = 6;
+
 #[contractimpl]
 impl OpLendToken {
     pub fn __constructor(
         e: Env,
         admin: Address,
-        decimal: u32,
         name: String,
         symbol: String,
         max_supply: i128,
         factory: Address,
     ) {
-        if decimal > 6 {
-            panic_with_error!(&e, Error::DecimalTooLarge);
-        }
-
         check_nonnegative_amount(&e, max_supply);
         write_administrator(&e, &admin);
 
@@ -121,7 +121,7 @@ impl OpLendToken {
         write_metadata(
             &e,
             TokenMetadata {
-                decimal,
+                decimal: DECIMALS,
                 name,
                 symbol,
             },

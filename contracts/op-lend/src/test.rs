@@ -55,7 +55,6 @@ fn create_token<'a>(e: &Env, admin: &Address) -> OpLendTokenClient<'a> {
         OpLendToken,
         (
             admin,
-            6_u32,
             String::from_val(e, &"name"),
             String::from_val(e, &"symbol"),
             MAX_SUPPLY,
@@ -494,23 +493,11 @@ fn transfer_from_insufficient_allowance() {
     );
 }
 
+/// AUDIT OpLend C5: decimals are fixed at 6, the unit the factory prices
+/// shares in; there is no constructor argument to get wrong.
 #[test]
-#[should_panic(expected = "Error(Contract, #2)")]
-fn decimal_over_six() {
+fn decimals_are_fixed_at_six() {
     let e = Env::default();
-    let admin = Address::generate(&e);
-    let _ = OpLendTokenClient::new(
-        &e,
-        &e.register(
-            OpLendToken,
-            (
-                admin,
-                7_u32,
-                String::from_val(&e, &"name"),
-                String::from_val(&e, &"symbol"),
-                MAX_SUPPLY,
-                mock_factory(&e, &signer_pubkey(&e)),
-            ),
-        ),
-    );
+    let token = create_token(&e, &Address::generate(&e));
+    assert_eq!(token.decimals(), 6);
 }

@@ -319,3 +319,12 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `make wallet-set-factory`) right after the upgrade, pointing at the new
   factory. `deploy-op-lend-wallet.sh` now passes `FACTORY_ID`.
 - Each signature check now costs one extra cross-contract read.
+
+## OpLend: share token decimals must be 6
+
+> Addresses **OpLend C5**
+
+- The constructor no longer takes `decimal` (it accepted any value up to 6):
+  the token always reports 6, the unit the factory prices shares in, so there
+  is no argument to get wrong. The factory stops passing it.
+- Error code 2 (`DecimalTooLarge`) is retired (not reused).

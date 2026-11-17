@@ -5,7 +5,8 @@ use soroban_sdk::contracterror;
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    DecimalTooLarge = 2,
+    // 2 (`DecimalTooLarge` / `InvalidDecimal`) retired: decimals are fixed at
+    // 6, no longer a constructor argument. Do not reuse the code.
     NegativeAmount = 3,
     SupplyCapExceeded = 4,
     InsufficientBalance = 5,
