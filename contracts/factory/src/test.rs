@@ -676,6 +676,39 @@ fn test_withdraw_usdc_before_start_fails() {
     );
 }
 
+/// AUDIT Factory C18: raised USDC cannot be withdrawn to the factory itself
+/// (it would count as withdrawn yet stay stranded in the shared balance) or to
+/// the all-zero account / contract ids, Stellar's `address(0)`.
+#[test]
+fn test_withdraw_usdc_rejects_stranding_destinations() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    invest_as(&s, id, &user, 100, "n1");
+
+    assert_eq!(
+        s.factory.try_withdraw_usdc(&id, &s.factory_id),
+        Err(Ok(Error::SelfTargetNotAllowed.into()))
+    );
+    for zero in [
+        "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+    ] {
+        assert_eq!(
+            s.factory
+                .try_withdraw_usdc(&id, &Address::from_str(&s.e, zero)),
+            Err(Ok(Error::ZeroAddressNotAllowed.into()))
+        );
+    }
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 0);
+
+    let dest = Address::generate(&s.e);
+    s.factory.withdraw_usdc(&id, &dest);
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
+}
+
 /// The factory pools every operation's USDC in one balance, so a refund on an
 /// operation whose funds were already withdrawn must not be paid out of
 /// another operation's escrow.

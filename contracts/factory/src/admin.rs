@@ -156,9 +156,32 @@ pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
     OpLendClient::new(e, &op.op_token).burn(&user, &value);
 }
 
+/// Strkeys of the all-zero account key and contract id: valid addresses nobody
+/// controls, Stellar's nearest thing to EVM's `address(0)`. USDC sent to the
+/// zero contract id lands in the token's ledger and can never move again.
+const ZERO_ACCOUNT: &[u8; 56] =
+    b"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+const ZERO_CONTRACT: &[u8; 56] =
+    b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+
+/// Rejects payout destinations that would strand the funds: the factory itself
+/// (the USDC would stay in the shared balance but count as withdrawn, so no
+/// operation could ever reach it again) and the zero addresses.
+fn require_payout_destination(e: &Env, destination: &Address) {
+    if *destination == e.current_contract_address() {
+        panic_with_error!(e, Error::SelfTargetNotAllowed);
+    }
+    let mut strkey = [0u8; 56];
+    destination.to_string().copy_into_slice(&mut strkey);
+    if &strkey == ZERO_ACCOUNT || &strkey == ZERO_CONTRACT {
+        panic_with_error!(e, Error::ZeroAddressNotAllowed);
+    }
+}
+
 pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     st::require_admin(e);
     st::bump_instance(e);
+    require_payout_destination(e, &destination);
 
     let mut op = st::read_op(e, id);
     if !op.flag(F_STARTED) {

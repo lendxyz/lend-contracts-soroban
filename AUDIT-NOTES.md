@@ -139,3 +139,15 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   fit in an `i128`, creation fails with `RaiseOverflow` (28). Before, the
   operation was created and the overflow surfaced only when its last share
   sold (computing `amount_raised_euro`), so it could never finish.
+
+## Factory: `withdraw_usdc` rejects stranding destinations
+
+> Addresses **Factory C18**
+
+- Withdrawing to the factory itself now fails with `SelfTargetNotAllowed`
+  (21). Before, it succeeded: the amount counted as withdrawn but the USDC
+  stayed in the shared balance, outside every operation's escrow.
+- Stellar has no `address(0)`; the nearest equivalents are the all-zero
+  account key (`GAAA…AWHF`) and contract id (`CAAA…BSC4`), valid addresses no
+  one controls. Both now fail with the new `ZeroAddressNotAllowed` (29).
+- Checked before any state change.

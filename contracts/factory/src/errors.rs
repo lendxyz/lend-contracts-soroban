@@ -34,4 +34,5 @@ pub enum Error {
     InvalidOperationId = 26,
     InvalidPrice = 27,
     RaiseOverflow = 28,
+    ZeroAddressNotAllowed = 29,
 }
