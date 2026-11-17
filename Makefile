@@ -27,7 +27,7 @@ build:
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
 #   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G...   # signs locally
 #   make fiat-invest OP_ID=1 SHARES=1000000 INVESTOR=G... DRY_RUN=1
-#   make wallet-register-op-lend OP_ID=1 OPLEND=C...   # wallet needs the op token
+#   make wallet-register-op-lend OP_ID=1   # token copied from the factory
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 WHITELIST=1 DRY_RUN=1
 #   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
@@ -82,8 +82,8 @@ invest-with-proof:
 fiat-invest:
 	./scripts/fiat-invest.sh
 
-# Maps an operation id to its op-lend token on the wallet, without which a
-# redeem has no token to transfer. ENTRIES='[{"op_id":1,"op_lend":"C..."}]'
+# Maps an operation id to its op-lend token on the wallet (copied from the
+# factory), without which a redeem has no token to transfer. OP_IDS='[1,2]'
 # registers a batch in one call.
 wallet-register-op-lend:
 	./scripts/wallet-register-op-lend.sh

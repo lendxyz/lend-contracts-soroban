@@ -22,6 +22,14 @@ mod oplend {
     );
 }
 
+// Op-lend-wallet wasm: reads the factory's `backend_signer` and
+// `get_operation`, so it is exercised against the real factory here.
+mod wallet {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/lend_wallet.wasm"
+    );
+}
+
 /// Mock Reflector feed, 14 decimals, answering only for the symbol it was
 /// deployed with (so a factory asking for the wrong asset gets no price).
 /// Tests move the price, remove it, or backdate it to exercise the factory's
@@ -1556,4 +1564,24 @@ fn test_backend_key_rotation() {
         .is_err());
     op_token.whitelist_user(&other, &nonce, &sign_with(&s.e, &new_key, &msg));
     assert!(op_token.is_whitelisted(&other));
+}
+
+/// The op-lend wallet against the real factory (OpLendWallet C3 / C4): it
+/// accepts the factory, decodes its `get_operation` record into its own
+/// mirror of `Operation`, and reads the backend signer through it.
+#[test]
+fn test_wallet_reads_operations_and_signer_from_the_factory() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    let wallet_id = s.e.register(
+        wallet::WASM,
+        (Address::generate(&s.e), s.factory_id.clone()),
+    );
+    let wallet = wallet::Client::new(&s.e, &wallet_id);
+
+    wallet.register_op_lend(&id);
+    assert_eq!(wallet.op_lend(&id), op_addr);
+    assert_eq!(wallet.backend_signer(), s.factory.backend_signer());
+    // An id the factory never created cannot be registered.
+    assert!(wallet.try_register_op_lend(&(id + 1)).is_err());
 }

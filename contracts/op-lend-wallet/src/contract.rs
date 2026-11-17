@@ -9,27 +9,26 @@ use crate::crypto::{
 use crate::errors::Error;
 use crate::events;
 use crate::storage as st;
-use crate::types::{OpLendClient, OpLendEntry};
+use crate::types::{FactoryClient, OpLendClient};
 
 const MAX_BATCH: u32 = 200;
-const STRKEY_LEN: usize = 56;
 
-fn require_contract(e: &Env, addr: &Address) {
-    let mut buf = [0u8; STRKEY_LEN];
-    addr.to_string().copy_into_slice(&mut buf);
-
-    if buf[0] != b'C' {
-        panic_with_error!(e, Error::NotAContract);
-    }
+/// Fails unless `factory` serves a backend signer, i.e. is a factory the
+/// wallet can read from (an account or an unrelated contract traps here).
+fn require_factory(e: &Env, factory: &Address) {
+    FactoryClient::new(e, factory).backend_signer();
 }
 
-fn register(e: &Env, op_id: u32, op_lend: &Address) {
-    require_contract(e, op_lend);
-    st::write_op_lend(e, op_id, op_lend);
+/// Records operation `op_id`'s share token as the factory has it, rather than
+/// an address passed in: a release can only ever pay out the token the factory
+/// created for that operation. Fails if the factory has no such operation.
+fn register(e: &Env, factory: &FactoryClient, op_id: u32) {
+    let op_lend = factory.get_operation(&op_id).op_token;
+    st::write_op_lend(e, op_id, &op_lend);
 
     events::OpLendRegistered {
         operation_id: op_id,
-        op_lend: op_lend.clone(),
+        op_lend,
     }
     .publish(e);
 }
@@ -77,7 +76,7 @@ pub struct OpLendWallet;
 #[contractimpl]
 impl OpLendWallet {
     pub fn __constructor(e: Env, admin: Address, factory: Address) {
-        require_contract(&e, &factory);
+        require_factory(&e, &factory);
         st::write_admin(&e, &admin);
         st::write_factory(&e, &factory);
         st::bump_instance(&e);
@@ -85,17 +84,19 @@ impl OpLendWallet {
 
     // --- Admin: registry ---
 
-    pub fn register_op_lend(e: Env, op_id: u32, op_lend: Address) {
+    /// Maps `op_id` to the share token the factory recorded for it.
+    pub fn register_op_lend(e: Env, op_id: u32) {
         st::require_admin(&e);
         st::bump_instance(&e);
-        register(&e, op_id, &op_lend);
+        let factory = FactoryClient::new(&e, &st::read_factory(&e));
+        register(&e, &factory, op_id);
     }
 
-    pub fn register_op_lends(e: Env, entries: Vec<OpLendEntry>) {
+    pub fn register_op_lends(e: Env, op_ids: Vec<u32>) {
         st::require_admin(&e);
         st::bump_instance(&e);
 
-        let len = entries.len();
+        let len = op_ids.len();
         if len == 0 {
             panic_with_error!(&e, Error::EmptyBatch);
         }
@@ -103,8 +104,9 @@ impl OpLendWallet {
             panic_with_error!(&e, Error::BatchTooLarge);
         }
 
-        for entry in entries.iter() {
-            register(&e, entry.op_id, &entry.op_lend);
+        let factory = FactoryClient::new(&e, &st::read_factory(&e));
+        for op_id in op_ids.iter() {
+            register(&e, &factory, op_id);
         }
     }
 
@@ -124,7 +126,7 @@ impl OpLendWallet {
     pub fn set_factory(e: Env, factory: Address) {
         st::require_admin(&e);
         st::bump_instance(&e);
-        require_contract(&e, &factory);
+        require_factory(&e, &factory);
         st::write_factory(&e, &factory);
 
         events::FactoryUpdated { factory }.publish(&e);

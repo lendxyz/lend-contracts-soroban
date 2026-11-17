@@ -5,30 +5,29 @@
 #
 # The wallet holds shares of many operations at once and is told about each one
 # explicitly: `redeem`/`whitelist_and_redeem` look the operation id up in this
-# map, and an unregistered id fails on chain before any transfer. The map takes
-# contract (`C...`) addresses only — an op-lend token is a contract, so a `G...`
-# account is rejected on chain rather than silently stored.
+# map, and an unregistered id fails on chain before any transfer. Only the id is
+# passed: the wallet copies the token from its factory's `get_operation`, so an
+# operation can never be mapped to another operation's token, and an id the
+# factory does not know is refused on chain.
 #
-# Re-registering an id overwrites it, which is how a redeployed op-lend token is
-# pointed at.
+# Re-registering an id refreshes it from the factory (e.g. after pointing the
+# wallet at a new factory with scripts/wallet-set-factory.sh).
 #
 # Network, signer and OPLEND_WALLET_ID come from scripts/common.sh; override in
 # the env.
 #
 # Required env vars:
 #   OP_ID   Operation id (integer).
-#   OPLEND  That operation's op-lend token contract (C...).
 #
 # Optional env vars:
-#   ENTRIES JSON array of {op_id, op_lend} objects. When set, one
-#           register_op_lends call registers the whole batch and OP_ID/OPLEND
-#           are ignored — cheaper than one transaction per operation.
+#   OP_IDS  JSON array of operation ids. When set, one register_op_lends call
+#           registers the whole batch and OP_ID is ignored — cheaper than one
+#           transaction per operation.
 #
 # Usage:
-#   OP_ID=1 OPLEND=C... ./scripts/wallet-register-op-lend.sh
-#   ENTRIES='[{"op_id":1,"op_lend":"C..."},{"op_id":2,"op_lend":"C..."}]' \
-#     ./scripts/wallet-register-op-lend.sh
-#   NETWORK=mainnet OP_ID=1 OPLEND=C... ./scripts/wallet-register-op-lend.sh
+#   OP_ID=1 ./scripts/wallet-register-op-lend.sh
+#   OP_IDS='[1,2,3]' ./scripts/wallet-register-op-lend.sh
+#   NETWORK=mainnet OP_ID=1 ./scripts/wallet-register-op-lend.sh
 #
 set -euo pipefail
 
@@ -41,27 +40,25 @@ echo "==> Network: $NETWORK"
 echo "==> Wallet:  $OPLEND_WALLET_ID"
 echo "==> Source:  $SOURCE"
 
-if [ -n "${ENTRIES:-}" ]; then
-  echo "==> Registering a batch of op-lend tokens..."
-  echo "    entries: $ENTRIES"
+if [ -n "${OP_IDS:-}" ]; then
+  echo "==> Registering operations $OP_IDS from the factory..."
   stellar contract invoke \
     --id "$OPLEND_WALLET_ID" \
     --source "$SOURCE" \
     "${NETWORK_ARGS[@]}" \
     "${SIGN_ARGS[@]}" \
     -- register_op_lends \
-    --entries "$ENTRIES"
+    --op_ids "$OP_IDS"
 else
-  req OP_ID OPLEND
-  echo "==> Registering operation $OP_ID -> $OPLEND..."
+  req OP_ID
+  echo "==> Registering operation $OP_ID from the factory..."
   stellar contract invoke \
     --id "$OPLEND_WALLET_ID" \
     --source "$SOURCE" \
     "${NETWORK_ARGS[@]}" \
     "${SIGN_ARGS[@]}" \
     -- register_op_lend \
-    --op_id "$OP_ID" \
-    --op_lend "$OPLEND"
+    --op_id "$OP_ID"
 fi
 
 echo "==> op-lend registration updated"

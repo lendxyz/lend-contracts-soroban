@@ -11,18 +11,24 @@ pub trait OpLendInterface {
     );
 }
 
-/// The one factory function the wallet calls.
+/// The factory functions the wallet calls.
 #[allow(dead_code)]
 #[contractclient(name = "FactoryClient")]
 pub trait FactoryInterface {
     fn backend_signer(env: Env) -> BytesN<32>;
+    fn get_operation(env: Env, id: u32) -> Operation;
 }
 
-#[contracttype]
+/// The factory's view of an operation, as returned by `get_operation`. Mirrors
+/// the factory's `Operation` field for field (decoding needs them all); the
+/// wallet only reads `op_token`.
+#[contracttype(export = false)]
 #[derive(Clone)]
-pub struct OpLendEntry {
-    pub op_id: u32,
-    pub op_lend: Address,
+pub struct Operation {
+    pub op_token: Address,
+    pub total_shares: i128,
+    pub eur_per_shares: i128,
+    pub op_name: String,
 }
 
 #[contracttype(export = false)]

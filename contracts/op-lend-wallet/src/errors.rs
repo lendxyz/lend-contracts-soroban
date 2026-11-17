@@ -6,7 +6,8 @@ use soroban_sdk::contracterror;
 pub enum Error {
     NotInitialized = 1,
     OperationNotRegistered = 2,
-    NotAContract = 3,
+    // 3 (`NotAContract`) retired: registry tokens come from the factory and a
+    // factory is checked by calling it. Do not reuse the code.
     InvalidAmount = 4,
     NonceAlreadyUsed = 5,
     EmptyBatch = 6,

@@ -310,7 +310,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   New `factory()` getter.
 - op-lend-wallet: constructor takes `factory` instead of `backend_signer`;
   `update_backend_signer` (and its `BackendSignerUpdated` event) is replaced by
-  `set_factory(factory)` (admin, contract addresses only, emits
+  `set_factory(factory)` (admin; the address must answer `backend_signer()`, emits
   `FactoryUpdated`). `backend_signer()` now reads through the factory; new
   `factory()` getter.
 - Upgrading the deployed wallet: its constructor does not run again, so until
@@ -338,3 +338,23 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   checks `is_whitelisted` is false, his balance is unchanged, and his transfer
   to a whitelisted user fails with `NotWhitelisted`; a later mint restores the
   right and the transfer succeeds.
+
+## OpLendWallet: registry tokens come from the factory
+
+> Addresses **OpLendWallet C4**
+
+- `register_op_lend(op_id)` and `register_op_lends(op_ids)` take only
+  operation ids and copy each token from the factory's `get_operation(id)`,
+  instead of trusting an address passed in. An operation can no longer be
+  mapped to another operation's token, and an id the factory does not know is
+  refused (one unknown id fails the whole batch). `OpLendEntry` is removed.
+- The wallet mirrors the factory's `Operation` struct to decode that record;
+  `test_wallet_reads_operations_and_signer_from_the_factory` (factory tests)
+  runs the real wallet wasm against the real factory, so a change to the
+  factory's struct breaks a test rather than registration on chain.
+- `require_contract` is removed, as recommended. `set_factory` and the
+  constructor now check the factory by calling its `backend_signer()`, which
+  also refuses a contract that is not a factory. Error `NotAContract` (3) is
+  retired (code not reused).
+- `scripts/wallet-register-op-lend.sh` takes `OP_ID`, or `OP_IDS='[1,2]'` for
+  a batch (was `OPLEND` / `ENTRIES`).

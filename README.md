@@ -154,9 +154,11 @@ The custodial holder of op-lend shares for investors who settled in EUR and have
 no wallet of their own: `fiat_invest` mints to it, and it releases the shares to
 the investor once they do have one.
 
-- **Registry** — `register_op_lend` / `register_op_lends` (admin) map an
-  operation id to its op-lend token, so a redeem only has to name the `op_id`.
-  `op_lend_balance(op_id)` reports what the wallet still holds for an operation.
+- **Registry** — `register_op_lend(op_id)` / `register_op_lends(op_ids)`
+  (admin) copy each operation's op-lend token from the factory's
+  `get_operation`, so a redeem only has to name the `op_id` and an operation
+  can never point at another one's token. `op_lend_balance(op_id)` reports
+  what the wallet still holds for an operation.
 - **Redeem** — `redeem(op_id, destination, amount, nonce, signature)` has no
   `require_auth` and no admin check: a backend ed25519 signature over the
   `OP_REDEEM` message plus a single-use nonce is the whole authorization, the
@@ -406,8 +408,8 @@ fn get_allowance(from, spender) -> Option<AllowanceValue>
 fn __constructor(admin, factory: Address)
 
 // Registry
-fn register_op_lend(op_id: u32, op_lend)                   // admin
-fn register_op_lends(entries: Vec<OpLendEntry>)            // admin
+fn register_op_lend(op_id: u32)                            // admin; token copied from factory.get_operation
+fn register_op_lends(op_ids: Vec<u32>)                     // admin
 
 // Redeem
 fn redeem(op_id: u32, destination, amount: i128, nonce: String, signature: BytesN<64>)
@@ -418,7 +420,7 @@ fn admin_redeem(op_id: u32, destination, amount: i128)     // admin; no signatur
 
 // Admin
 fn set_admin(new_admin)                                    // admin
-fn set_factory(factory)                                    // admin; contract address only
+fn set_factory(factory)                                    // admin; must answer backend_signer()
 fn upgrade(new_wasm_hash: BytesN<32>)                      // admin; in place, state survives
 
 // Getters
@@ -502,7 +504,7 @@ make deploy-dummy-usdc
 make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
 make start-operation OP_ID=0
 make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
-make wallet-register-op-lend OP_ID=1 OPLEND=C...            # wallet: op id -> op-lend token
+make wallet-register-op-lend OP_ID=1                        # wallet: op id -> its token, from the factory
 make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 DRY_RUN=1   # simulate a release
 
 # mainnet uses the same targets and signs on a Ledger

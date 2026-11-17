@@ -138,43 +138,43 @@ NETWORK=testnet \  # optional, default testnet
 ./scripts/deploy-op-lend-wallet.sh
 ```
 
-`ADMIN` defaults to the `SOURCE` address. `BACKEND_SIGNER` defaults per
-`NETWORK` from `common.sh` and is accepted as a `G...` strkey (decoded to the
-raw 32-byte pubkey) or as 64 hex chars, same as `deploy-factory.sh`. Prints
-`OPLEND_WALLET_ID` on success — record it in `common.sh` and
-[`DEPLOYMENTS.md`](../DEPLOYMENTS.md).
+`ADMIN` defaults to the `SOURCE` address, `FACTORY_ID` to the network's factory
+(from `common.sh`): the wallet reads the backend signer and each operation's
+token from it. Prints `OPLEND_WALLET_ID` on success — record it in `common.sh`
+and [`DEPLOYMENTS.md`](../DEPLOYMENTS.md).
 
-One wallet serves every operation: point it at each operation's op-lend token
-afterwards with `wallet-register-op-lend.sh`. It is the address you pass as `HOLDER` to
+One wallet serves every operation: register each one afterwards with
+`wallet-register-op-lend.sh`. It is the address you pass as `HOLDER` to
 `fiat-invest.sh` once deployed.
 
 ## `wallet-register-op-lend.sh`
 
-Admin-only. Maps an operation id to its op-lend token address inside the wallet,
-so a redeem only has to name the `OP_ID`.
+Admin-only. Maps an operation id to its op-lend token inside the wallet, so a
+redeem only has to name the `OP_ID`. Only the id is passed: the wallet copies
+the token from its factory's `get_operation`, so an operation can never be
+mapped to another operation's token.
 
 ```bash
 SOURCE=admin \        # wallet ADMIN
 OPLEND_WALLET_ID=C... \
 OP_ID=1 \             # operation id (u32)
-OPLEND=C... \         # that operation's op-lend token
 ./scripts/wallet-register-op-lend.sh
 ```
 
-Or register several in one transaction with `ENTRIES` (JSON, handed straight to
-`register_op_lends`):
+Or register several in one transaction with `OP_IDS` (JSON array, handed
+straight to `register_op_lends`):
 
 ```bash
 SOURCE=admin \
 OPLEND_WALLET_ID=C... \
-ENTRIES='[{"op_id":1,"op_lend":"C..."},{"op_id":2,"op_lend":"C..."}]' \
+OP_IDS='[1,2,3]' \
 ./scripts/wallet-register-op-lend.sh
 ```
 
-Setting `ENTRIES` takes the batch path and ignores `OP_ID` / `OPLEND`. Only
-contract (`C...`) addresses are accepted on chain — a `G...` account is not a
-token and the call fails. Read a mapping back with `op_lend(op_id)`, and the
-wallet's own holding for an operation with `op_lend_balance(op_id)`.
+Setting `OP_IDS` takes the batch path and ignores `OP_ID`. An id the factory
+does not know fails on chain (the whole batch with it). Read a mapping back
+with `op_lend(op_id)`, and the wallet's own holding for an operation with
+`op_lend_balance(op_id)`.
 
 ## `wallet-redeem.sh`
 

@@ -10,7 +10,7 @@ use soroban_sdk::{
 
 use crate::contract::{OpLendWallet, OpLendWalletClient};
 use crate::errors::Error;
-use crate::types::OpLendEntry;
+use crate::types::Operation;
 
 // Op-lend wasm, built by `stellar contract build` (see the Makefile). The
 // wallet's whole job is moving these tokens, and op-lend's whitelist rule is
@@ -28,7 +28,7 @@ const FUNDED: i128 = 1_000;
 
 /// A real, checksum-valid account (`G...`) strkey — the network's testnet
 /// backend signer. `Address::generate` only ever hands out contract addresses,
-/// so this is the only way to exercise the `NotAContract` guard.
+/// so this is the only way to try an account where a factory is expected.
 const ACCOUNT_STRKEY: &str =
     "GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA";
 
@@ -45,7 +45,7 @@ fn pubkey(e: &Env, key: &SigningKey) -> BytesN<32> {
 }
 
 /// Stands in for the factory: serves the backend signer the wallet and the
-/// token read, and lets a test rotate it.
+/// token read (rotatable), and the operations the wallet registers.
 #[contract]
 pub struct MockFactory;
 
@@ -66,6 +66,18 @@ impl MockFactory {
             .instance()
             .get(&symbol_short!("signer"))
             .unwrap()
+    }
+    pub fn set_operation(e: Env, id: u32, op_token: Address) {
+        e.storage().instance().set(&id, &op_token);
+    }
+    /// Fails for an operation it does not know, like the real factory.
+    pub fn get_operation(e: Env, id: u32) -> Operation {
+        Operation {
+            op_token: e.storage().instance().get(&id).unwrap(),
+            total_shares: 0,
+            eur_per_shares: 0,
+            op_name: String::from_str(&e, ""),
+        }
     }
 }
 
@@ -104,12 +116,14 @@ fn setup<'a>() -> Setup<'a> {
     let wallet_id =
         e.register(OpLendWallet, (admin.clone(), factory_id.clone()));
     let wallet = OpLendWalletClient::new(&e, &wallet_id);
+    let factory = MockFactoryClient::new(&e, &factory_id);
 
-    wallet.register_op_lend(&OP_ID, &op_token_id);
+    factory.set_operation(&OP_ID, &op_token_id);
+    wallet.register_op_lend(&OP_ID);
     op_token.mint(&wallet_id, &FUNDED);
 
     Setup {
-        factory: MockFactoryClient::new(&e, &factory_id),
+        factory,
         e,
         admin,
         wallet,
@@ -464,14 +478,22 @@ fn test_admin_redeem_requires_admin_auth() {
     s.wallet.admin_redeem(&OP_ID, &user, &600);
 }
 
+/// AUDIT OpLendWallet C4: the registry takes only an operation id and copies
+/// the token from the factory, so an operation can never be mapped to another
+/// operation's token. An id the factory does not know is refused.
 #[test]
-fn test_register_op_lend_rejects_an_account_address() {
+fn test_register_op_lend_takes_the_token_from_the_factory() {
     let s = setup();
-    let account = Address::from_str(&s.e, ACCOUNT_STRKEY);
+    let op_3_token = Address::generate(&s.e);
+    s.factory.set_operation(&3, &op_3_token);
 
+    s.wallet.register_op_lend(&3);
+    assert_eq!(s.wallet.op_lend(&3), op_3_token);
+
+    assert!(s.wallet.try_register_op_lend(&99).is_err());
     assert_eq!(
-        s.wallet.try_register_op_lend(&42, &account),
-        Err(Ok(Error::NotAContract.into()))
+        s.wallet.try_op_lend(&99),
+        Err(Ok(Error::OperationNotRegistered.into()))
     );
 }
 
@@ -480,19 +502,10 @@ fn test_register_op_lends_writes_every_entry() {
     let s = setup();
     let second = Address::generate(&s.e);
     let third = Address::generate(&s.e);
+    s.factory.set_operation(&1, &second);
+    s.factory.set_operation(&2, &third);
 
-    let entries: Vec<OpLendEntry> = vec![
-        &s.e,
-        OpLendEntry {
-            op_id: 1,
-            op_lend: second.clone(),
-        },
-        OpLendEntry {
-            op_id: 2,
-            op_lend: third.clone(),
-        },
-    ];
-    s.wallet.register_op_lends(&entries);
+    s.wallet.register_op_lends(&vec![&s.e, 1, 2]);
 
     assert_eq!(s.wallet.op_lend(&1), second);
     assert_eq!(s.wallet.op_lend(&2), third);
@@ -503,14 +516,23 @@ fn test_register_op_lends_writes_every_entry() {
         s.wallet.try_register_op_lends(&Vec::new(&s.e)),
         Err(Ok(Error::EmptyBatch.into()))
     );
+    // One unknown id fails the whole batch.
+    assert!(s.wallet.try_register_op_lends(&vec![&s.e, 1, 99]).is_err());
 }
 
+/// Re-registering after `set_factory` picks up the new factory's record for
+/// that id.
 #[test]
-fn test_register_op_lend_overwrites_a_stale_mapping() {
+fn test_register_op_lend_follows_the_current_factory() {
     let s = setup();
+    let new_factory_id =
+        s.e.register(MockFactory, (pubkey(&s.e, &signer_key()),));
+    let new_factory = MockFactoryClient::new(&s.e, &new_factory_id);
     let replacement = Address::generate(&s.e);
+    new_factory.set_operation(&OP_ID, &replacement);
 
-    s.wallet.register_op_lend(&OP_ID, &replacement);
+    s.wallet.set_factory(&new_factory_id);
+    s.wallet.register_op_lend(&OP_ID);
 
     assert_eq!(s.wallet.op_lend(&OP_ID), replacement);
 }
@@ -563,11 +585,12 @@ fn test_set_factory_switches_the_signer_source() {
     let new_factory =
         s.e.register(MockFactory, (pubkey(&s.e, &rotated_key()),));
 
-    assert_eq!(
-        s.wallet
-            .try_set_factory(&Address::from_str(&s.e, ACCOUNT_STRKEY)),
-        Err(Ok(Error::NotAContract.into()))
-    );
+    // An account, or a contract that serves no backend signer, is refused.
+    assert!(s
+        .wallet
+        .try_set_factory(&Address::from_str(&s.e, ACCOUNT_STRKEY))
+        .is_err());
+    assert!(s.wallet.try_set_factory(&s.op_token_id).is_err());
 
     s.wallet.set_factory(&new_factory);
     assert_eq!(s.wallet.factory(), new_factory);
