@@ -25,8 +25,8 @@ pub enum Error {
     // 17 (`OperationNotFinished`) retired: withdrawals no longer wait for the
     // end of the sale. Do not reuse the code.
     NothingToWithdraw = 18,
-    NoParticipation = 19,
-    NoOpLendBalance = 20,
+    // 19 (`NoParticipation`) and 20 (`NoOpLendBalance`) retired: refunds take
+    // admin-decided amounts instead of deriving them. Do not reuse the codes.
     SelfTargetNotAllowed = 21,
     OracleNoPrice = 22,
     OracleInvalidPrice = 23,
@@ -40,4 +40,5 @@ pub enum Error {
     AmountTooSmall = 31,
     UsdcOffPeg = 32,
     InsufficientFiatShares = 33,
+    InsufficientShareBalance = 34,
 }

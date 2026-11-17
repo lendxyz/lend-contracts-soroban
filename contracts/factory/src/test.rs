@@ -13,6 +13,7 @@ use crate::contract::{LendFactory, LendFactoryClient};
 use crate::errors::Error;
 use crate::events::OperationFinished;
 use crate::oracle::{Asset, PriceData};
+use crate::types::RefundEntry;
 
 // Op-lend wasm, built by `cargo build -p lend-operation-token --target wasm32v1-none --release`.
 mod oplend {
@@ -659,7 +660,7 @@ fn test_refund_user() {
     let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
     s.factory.invest(&user, &id, &100, &nonce, &sig);
 
-    s.factory.refund_user(&id, &user);
+    s.factory.refund_user(&id, &user, &100, &1100);
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     assert_eq!(op_token.balance(&user), 0);
@@ -667,6 +668,57 @@ fn test_refund_user() {
     assert_eq!(s.factory.usdc_raised(&id), 0);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     assert_eq!(usdc_tok.balance(&user), 10_000); // fully refunded
+}
+
+/// AUDIT Factory C1: shares and USDC are refunded in admin-decided amounts.
+/// Shares moved to another wallet before the refund cannot be counted as
+/// burned, and the USDC repaid is whatever the admin settles on, not the
+/// whole recorded investment.
+#[test]
+fn test_refund_takes_admin_decided_shares_and_usdc() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    invest_as(&s, id, &user, 100, "n1"); // 100 shares for 1100
+
+    // Before the refund, 60 shares move to another wallet.
+    let friend = Address::generate(&s.e);
+    s.factory.oplend_whitelist_user(&id, &friend, &true);
+    op_token.transfer(&user, &friend, &60);
+
+    // The full position can no longer be burned from `user`...
+    assert_eq!(
+        s.factory.try_refund_user(&id, &user, &100, &1100).err(),
+        Some(Ok(Error::InsufficientShareBalance.into()))
+    );
+    // ...so the admin refunds only the 40 shares still held, for their USDC.
+    s.factory.refund_user(&id, &user, &40, &440);
+
+    assert_eq!(op_token.balance(&user), 0);
+    assert_eq!(op_token.balance(&friend), 60);
+    assert_eq!(usdc_tok.balance(&user), 10_000 - 1100 + 440);
+    assert_eq!(s.factory.funding_progress(&id), 60);
+    assert_eq!(s.factory.usdc_raised(&id), 1100 - 440);
+    assert_eq!(s.factory.usdc_raised_per_client(&id, &user), 1100);
+
+    // Nothing to burn and nothing to pay, or negative amounts, are rejected.
+    assert_eq!(
+        s.factory.try_refund_user(&id, &friend, &0, &0).err(),
+        Some(Ok(Error::InvalidAmount.into()))
+    );
+    assert_eq!(
+        s.factory.try_refund_user(&id, &friend, &-1, &0).err(),
+        Some(Ok(Error::InvalidShares.into()))
+    );
+    assert_eq!(
+        s.factory.try_refund_user(&id, &friend, &1, &-1).err(),
+        Some(Ok(Error::InvalidAmount.into()))
+    );
 }
 
 #[test]
@@ -816,11 +868,11 @@ fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
     invest_as(&s, b, &other, 100, "b1");
 
     assert_eq!(
-        s.factory.try_refund_user(&a, &early),
+        s.factory.try_refund_user(&a, &early, &100, &1100),
         Err(Ok(Error::InsufficientEscrow.into()))
     );
     // Money invested after the withdrawal is still escrowed and refundable.
-    s.factory.refund_user(&a, &late);
+    s.factory.refund_user(&a, &late, &10, &110);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     assert_eq!(usdc_tok.balance(&late), 10_000);
     assert_eq!(usdc_tok.balance(&s.factory_id), 1100); // operation b, intact
@@ -874,15 +926,25 @@ fn test_batch_refund_accumulates_across_users() {
     // old 1e6-only math truncated away.
     assert_eq!(s.factory.usdc_raised(&id), 2211);
 
-    let batch = soroban_sdk::vec![&s.e, users[0].clone(), users[1].clone()];
+    let entry = |user: &Address, shares: i128, usdc: i128| RefundEntry {
+        user: user.clone(),
+        shares_to_burn: shares,
+        usdc_to_refund: usdc,
+    };
+    let batch = soroban_sdk::vec![
+        &s.e,
+        entry(&users[0], 100, 1100),
+        entry(&users[1], 101, 1111)
+    ];
     s.factory.batch_refund_users(&id, &batch);
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
-    for user in users.iter() {
+    for (user, paid) in users.iter().zip([1100, 1111]) {
         assert_eq!(op_token.balance(user), 0);
         assert_eq!(usdc_tok.balance(user), 10_000);
-        assert_eq!(s.factory.usdc_raised_per_client(&id, user), 0);
+        // The record of USDC paid in is not rewritten by a refund.
+        assert_eq!(s.factory.usdc_raised_per_client(&id, user), paid);
     }
     assert_eq!(s.factory.funding_progress(&id), 0);
     assert_eq!(s.factory.usdc_raised(&id), 0);

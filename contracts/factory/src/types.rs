@@ -26,6 +26,16 @@ pub struct Operation {
     pub op_name: String,
 }
 
+/// One refund in `batch_refund_users`: shares to burn from `user` and USDC to
+/// repay them, both decided by the admin.
+#[contracttype]
+#[derive(Clone)]
+pub struct RefundEntry {
+    pub user: Address,
+    pub shares_to_burn: i128,
+    pub usdc_to_refund: i128,
+}
+
 // `OpData::flags` bits.
 pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;

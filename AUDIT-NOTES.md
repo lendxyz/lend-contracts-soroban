@@ -247,3 +247,24 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   (`InsufficientFiatShares`, 33), so it cannot unwind USDC purchases.
 - Emits `Refunded` with `usdc_amount: 0` plus a new `RefundedFiat`, mirroring
   `Invested` + `InvestedFiat` on the way in.
+
+## Factory: refunds take admin-decided shares and USDC
+
+> Addresses **Factory C1**
+
+- `refund_one` repaid the whole recorded `invested` USDC and burned the
+  user's whole share balance, two unrelated amounts: shares move between
+  whitelisted holders, and euro buyers have no USDC recorded. A user could
+  move his shares away just before the refund, get all his USDC back and keep
+  the shares.
+- `refund_user(id, user, shares_to_burn, usdc_to_refund)` and
+  `batch_refund_users(id, entries: Vec<RefundEntry>)` now take both amounts
+  from the admin.
+- Burning more than the user holds fails with the new
+  `InsufficientShareBalance` (34), before any transfer; the USDC is still
+  capped by the operation's escrow (`InsufficientEscrow`). Negative amounts,
+  or both zero, are rejected.
+- `Position.invested` is no longer reduced: it stays the record of USDC paid
+  in, which `usdc_to_refund` need not match.
+- Errors `NoParticipation` (19) and `NoOpLendBalance` (20) are retired (codes
+  not reused).

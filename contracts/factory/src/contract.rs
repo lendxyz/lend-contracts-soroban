@@ -3,7 +3,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::Error;
-use crate::types::{DataKey, Operation};
+use crate::types::{DataKey, Operation, RefundEntry};
 use crate::{admin, getters, invest, operations, oracle, storage as st};
 
 #[contract]
@@ -125,12 +125,20 @@ impl LendFactory {
 
     // --- Admin ---
 
-    pub fn refund_user(env: Env, id: u32, user: Address) {
-        admin::refund_user(&env, id, user);
+    /// Burns `shares_to_burn` of `user`'s shares and repays `usdc_to_refund`
+    /// USDC from the operation's escrow; the admin decides both amounts.
+    pub fn refund_user(
+        env: Env,
+        id: u32,
+        user: Address,
+        shares_to_burn: i128,
+        usdc_to_refund: i128,
+    ) {
+        admin::refund_user(&env, id, user, shares_to_burn, usdc_to_refund);
     }
 
-    pub fn batch_refund_users(env: Env, id: u32, users: Vec<Address>) {
-        admin::batch_refund_users(&env, id, users);
+    pub fn batch_refund_users(env: Env, id: u32, entries: Vec<RefundEntry>) {
+        admin::batch_refund_users(&env, id, entries);
     }
 
     pub fn fiat_refund(

@@ -101,11 +101,13 @@ Responsibilities:
 - **Investment processing**: `invest` (on-chain USDC) and `fiat_invest` (USDC
   settled off-chain, tokens minted to a holder). Both verify a backend ed25519
   signature and consume a single-use nonce.
-- **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn OpLend and
-  return escrowed USDC; `fiat_refund` mirrors an off-chain euro refund (burns
-  the custodied shares, puts them back on sale, capped at the investor's
-  `fiat_shares`); `withdraw_usdc` releases the raised funds not yet withdrawn,
-  any time after an operation starts.
+- **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn an
+  admin-chosen number of shares and repay an admin-chosen USDC amount from the
+  operation's escrow (the two are not tied: shares move between holders);
+  `fiat_refund` mirrors an off-chain euro refund (burns the custodied shares,
+  puts them back on sale, capped at the investor's `fiat_shares`);
+  `withdraw_usdc` releases the raised funds not yet withdrawn, any time after
+  an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
   `oplend_whitelist_user`, `oplend_update_backend_signer`, `oplend_void_nonce`,
   `oplend_admin_burn`, and `oplend_upgrade` (which also makes the new wasm the
@@ -284,7 +286,7 @@ touch a dozen entries.
 | --- | --- | --- |
 | `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / withdrawn bits in one `u32` | 8 separate per-operation keys |
 | `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
-| `Position(id, user)` | USDC invested | (per-(op, user) mapping) |
+| `Position(id, user)` | USDC paid in (not reduced by refunds), euro-bought shares still refundable | (per-(op, user) mapping) |
 | `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
 
 `Operation` — the struct returned by `operations` / `get_operation` — is
@@ -328,8 +330,8 @@ fn get_amount_in(id: u32, shares_amount: i128) -> i128
 fn get_amount_out(id: u32, usdc_amount: i128) -> i128
 
 // Admin
-fn refund_user(id: u32, user)
-fn batch_refund_users(id: u32, users: Vec<Address>)       // refunds every address in the list
+fn refund_user(id: u32, user, shares_to_burn: i128, usdc_to_refund: i128)  // admin decides both; burn capped at the user's balance
+fn batch_refund_users(id: u32, entries: Vec<RefundEntry>) // RefundEntry { user, shares_to_burn, usdc_to_refund }
 fn fiat_refund(id: u32, user, oplend_holder, shares_amount: i128)  // admin; burns from oplend_holder, lowers funding_progress
 fn withdraw_usdc(id: u32, destination)
 fn update_oracle_address(new_oracle)

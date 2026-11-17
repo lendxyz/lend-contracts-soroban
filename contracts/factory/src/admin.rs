@@ -4,51 +4,71 @@ use crate::errors::Error;
 use crate::events;
 use crate::oracle::{set_oracle, set_usdc_oracle};
 use crate::storage as st;
-use crate::types::{DataKey, OpData, OpLendClient, F_STARTED, F_WITHDRAWN};
+use crate::types::{
+    DataKey, OpData, OpLendClient, RefundEntry, F_STARTED, F_WITHDRAWN,
+};
 
+/// Burns `shares_to_burn` of the user's shares and repays `usdc_to_refund`
+/// USDC, both decided by the admin. The two are not tied to each other (shares
+/// move between holders, euro buyers have no USDC recorded), so neither is
+/// derived from the other or from `Position::invested`, which is left as the
+/// record of USDC paid in.
 fn refund_one(
     e: &Env,
     id: u32,
     op: &mut OpData,
     oplend: &OpLendClient,
     usdc: &token::Client,
-    user: Address,
+    entry: RefundEntry,
     withdrawn: i128,
 ) {
-    let mut pos = st::read_position(e, id, &user);
-    let invested = pos.invested;
-    let oplend_balance = oplend.balance(&user);
+    let RefundEntry {
+        user,
+        shares_to_burn,
+        usdc_to_refund,
+    } = entry;
 
-    if invested == 0 {
-        panic_with_error!(e, Error::NoParticipation);
+    if shares_to_burn < 0 {
+        panic_with_error!(e, Error::InvalidShares);
     }
-    if oplend_balance == 0 {
-        panic_with_error!(e, Error::NoOpLendBalance);
+    if usdc_to_refund < 0 || (shares_to_burn == 0 && usdc_to_refund == 0) {
+        panic_with_error!(e, Error::InvalidAmount);
+    }
+    if shares_to_burn > oplend.balance(&user) {
+        panic_with_error!(e, Error::InsufficientShareBalance);
     }
     // USDC of every operation sits in one balance: refunding more than this
     // operation still holds would pay out another operation's escrow.
-    if invested > op.usdc_raised - withdrawn {
+    if usdc_to_refund > op.usdc_raised - withdrawn {
         panic_with_error!(e, Error::InsufficientEscrow);
     }
 
-    op.funding_progress -= oplend_balance;
-    op.usdc_raised -= invested;
-    pos.invested = 0;
-    st::write_position(e, id, &user, &pos);
+    op.funding_progress -= shares_to_burn;
+    op.usdc_raised -= usdc_to_refund;
 
-    oplend.burn(&user, &oplend_balance);
-    usdc.transfer(&e.current_contract_address(), &user, &invested);
+    if shares_to_burn > 0 {
+        oplend.burn(&user, &shares_to_burn);
+    }
+    if usdc_to_refund > 0 {
+        usdc.transfer(&e.current_contract_address(), &user, &usdc_to_refund);
+    }
 
     events::Refunded {
         investor: user,
         operation_id: id,
-        usdc_amount: invested,
-        shares_refunded: oplend_balance,
+        usdc_amount: usdc_to_refund,
+        shares_refunded: shares_to_burn,
     }
     .publish(e);
 }
 
-pub fn refund_user(e: &Env, id: u32, user: Address) {
+pub fn refund_user(
+    e: &Env,
+    id: u32,
+    user: Address,
+    shares_to_burn: i128,
+    usdc_to_refund: i128,
+) {
     st::require_admin(e);
     st::bump_instance(e);
 
@@ -61,13 +81,17 @@ pub fn refund_user(e: &Env, id: u32, user: Address) {
         &mut op,
         &oplend,
         &st::usdc_client(e),
-        user,
+        RefundEntry {
+            user,
+            shares_to_burn,
+            usdc_to_refund,
+        },
         withdrawn,
     );
     st::write_op(e, id, &op);
 }
 
-pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>) {
+pub fn batch_refund_users(e: &Env, id: u32, entries: Vec<RefundEntry>) {
     st::require_admin(e);
     st::bump_instance(e);
 
@@ -75,8 +99,8 @@ pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>) {
     let oplend = OpLendClient::new(e, &op.op_token);
     let usdc = st::usdc_client(e);
     let withdrawn = st::read_usdc_withdrawn(e, id);
-    for user in users.iter() {
-        refund_one(e, id, &mut op, &oplend, &usdc, user, withdrawn);
+    for entry in entries.iter() {
+        refund_one(e, id, &mut op, &oplend, &usdc, entry, withdrawn);
     }
     st::write_op(e, id, &op);
 }
