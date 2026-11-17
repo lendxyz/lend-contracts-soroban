@@ -53,3 +53,21 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   so no stored data needs migrating.
 - Operations now start only through `start_operation`; filling one no longer
   starts it automatically.
+
+## Factory: setup moved to `__constructor`
+
+> Addresses **Factory C17**
+
+- `initialize(...)` is replaced by `__constructor(admin, usdc, oracle,
+  backend_signer, oplend_wasm_hash, first_op_id)`, which runs inside the deploy
+  transaction. There is no longer a window between deploy and setup in which
+  anyone could call `initialize` first and take the admin role.
+- Error `AlreadyInitialized` (1) is retired (code not reused): a constructor
+  cannot run twice.
+- New `first_op_id`: the first operation gets this id, so the redeployed
+  factory continues the old one's numbering (op ids key the upgraded op-lend
+  wallet registry and rewards roots). `0` fails with `InvalidOperationId` (26).
+- `scripts/deploy-factory.sh` passes the setup as constructor args (requires
+  `FIRST_OP_ID`), and its deterministic deploy salt now includes the factory
+  wasm hash: the old salt derived the existing factory id on both networks, so
+  a fresh deploy would have been skipped as "already deployed".

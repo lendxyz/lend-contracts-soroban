@@ -4,7 +4,8 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    AlreadyInitialized = 1,
+    // 1 (`AlreadyInitialized`) retired: setup runs in `__constructor`, which
+    // can only run once. Do not reuse the code.
     NotInitialized = 2,
     OperationNotFound = 3,
     OperationFinished = 4,
@@ -30,4 +31,5 @@ pub enum Error {
     OracleInvalidPrice = 23,
     OracleStalePrice = 24,
     InsufficientEscrow = 25,
+    InvalidOperationId = 26,
 }

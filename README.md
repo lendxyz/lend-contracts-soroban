@@ -227,7 +227,7 @@ pub trait OracleInterface {
 - `amount_in(eur_per_shares, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
 - `amount_out(eur_per_shares, usdc)` → shares (`SHARE_PRECISION = 1e12`).
 
-`decimals()` is read once — at `initialize`, and again on every
+`decimals()` is read once — in the constructor, and again on every
 `update_oracle_address` — and cached in instance storage, so pricing costs a
 single cross-contract call. Re-run `update_oracle_address` (the same address is
 fine) if a feed ever changes its decimals in place.
@@ -241,14 +241,14 @@ Everything internal is 6-decimal: `eur_per_shares`, `total_shares`,
 The one exception is the leg that moves USDC. **Circle's USDC is a classic
 Stellar asset behind a SAC, so it reports 7 decimals**, and the testnet
 DummyUSDC is deployed with 7 to match. The factory never assumes either value:
-`initialize` caches the USDC token's `decimals()` alongside the oracle's, and
+the constructor caches the USDC token's `decimals()` alongside the oracle's, and
 `amount_in` / `amount_out` convert between the 6-decimal pricing space and the
 token's own base units. `usdc_raised`, `Position::invested` and the amounts in
 `Invested` / `Refunded` events are all in USDC base units — read them against
 the token's `decimals()`, never against a hardcoded 1e6.
 
 `DataKey::Usdc` is write-once: the cached scale is only correct for the token it
-was initialized with, so pointing the factory at a USDC with different decimals
+was deployed with, so pointing the factory at a USDC with different decimals
 means a fresh deploy, not a setter. Swapping it in place would also invalidate
 every `usdc_raised` already denominated in the old token's units.
 
@@ -299,7 +299,7 @@ the generated `try_*` client methods.
 
 ```rust
 // Setup
-fn initialize(admin, usdc, oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>)
+fn __constructor(admin, usdc, oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>, first_op_id: u32)  // runs at deploy; first op gets `first_op_id`
 fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
 
 // Operations

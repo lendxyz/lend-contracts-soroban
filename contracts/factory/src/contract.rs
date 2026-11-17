@@ -11,23 +11,32 @@ pub struct LendFactory;
 
 #[contractimpl]
 impl LendFactory {
-    pub fn initialize(
+    /// Runs once, inside the deploy transaction, so no one can front-run the
+    /// setup (the old `initialize` left a window between deploy and init).
+    ///
+    /// `first_op_id` is the id the first `create_operation` gets (ids then go
+    /// up by one), so a redeployed factory can continue a previous one's
+    /// numbering. `operation_count` reports the last id issued:
+    /// `first_op_id - 1` until an operation exists.
+    pub fn __constructor(
         env: Env,
         admin: Address,
         usdc: Address,
         oracle: Address,
         backend_signer: BytesN<32>,
         oplend_wasm_hash: BytesN<32>,
+        first_op_id: u32,
     ) {
-        let instance = env.storage().instance();
-        if instance.has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
+        if first_op_id == 0 {
+            panic_with_error!(&env, Error::InvalidOperationId);
         }
 
+        let instance = env.storage().instance();
         instance.set(&DataKey::Admin, &admin);
         instance.set(&DataKey::BackendSigner, &backend_signer);
         instance.set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
 
+        st::set_operation_count(&env, first_op_id - 1);
         st::set_usdc(&env, &usdc);
         oracle::set_oracle(&env, &oracle);
         st::bump_instance(&env);

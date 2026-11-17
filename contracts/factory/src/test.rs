@@ -66,6 +66,10 @@ struct Setup<'a> {
 }
 
 fn setup<'a>() -> Setup<'a> {
+    setup_from(1)
+}
+
+fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
     let e = Env::default();
     e.mock_all_auths();
     e.ledger().set_timestamp(1_000_000);
@@ -79,13 +83,9 @@ fn setup<'a>() -> Setup<'a> {
 
     let oracle_addr = e.register(MockOracle, ());
 
-    let signer =
-        BytesN::from_array(&e, &signer_key().verifying_key().to_bytes());
-    let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
-
-    let factory_id = e.register(LendFactory, ());
+    let factory_id =
+        register_factory(&e, &admin, &usdc_addr, &oracle_addr, first_op_id);
     let factory = LendFactoryClient::new(&e, &factory_id);
-    factory.initialize(&admin, &usdc_addr, &oracle_addr, &signer, &wasm_hash);
 
     Setup {
         e,
@@ -94,6 +94,30 @@ fn setup<'a>() -> Setup<'a> {
         usdc,
         usdc_addr,
     }
+}
+
+/// Deploys a factory, running its `__constructor`.
+fn register_factory(
+    e: &Env,
+    admin: &Address,
+    usdc: &Address,
+    oracle: &Address,
+    first_op_id: u32,
+) -> Address {
+    let signer =
+        BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
+    let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
+    e.register(
+        LendFactory,
+        (
+            admin.clone(),
+            usdc.clone(),
+            oracle.clone(),
+            signer,
+            wasm_hash,
+            first_op_id,
+        ),
+    )
 }
 
 /// Independent reconstruction of the `ONCHAIN_INVEST` payload. Keep it naive
@@ -137,6 +161,38 @@ fn test_create_operation() {
     assert!(!s.factory.operation_started(&id));
 }
 
+/// A redeployed factory continues a previous one's numbering, so ids keyed in
+/// other contracts (wallet registry, rewards roots) never collide.
+#[test]
+fn test_first_op_id_offsets_operation_ids() {
+    let s = setup_from(5);
+    assert_eq!(s.factory.operation_count(), 4);
+
+    let (id, op_addr) = create_op(&s, 1000);
+    assert_eq!(id, 5);
+    assert_eq!(s.factory.get_operation(&5).op_token, op_addr);
+    assert_eq!(
+        s.factory.try_get_operation(&1).err(),
+        Some(Ok(Error::OperationNotFound.into()))
+    );
+
+    let (next, _) = create_op(&s, 1000);
+    assert_eq!(next, 6);
+}
+
+#[test]
+#[should_panic(expected = "Error(Contract, #26)")]
+fn test_first_op_id_zero_is_rejected() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let usdc = e
+        .register_stellar_asset_contract_v2(Address::generate(&e))
+        .address();
+    let oracle = e.register(MockOracle, ());
+
+    register_factory(&e, &Address::generate(&e), &usdc, &oracle, 0);
+}
+
 #[test]
 fn test_get_amount_in_out() {
     let s = setup();
@@ -167,14 +223,10 @@ fn test_upgrade_replaces_the_executable() {
 
 /// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
 fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
-    let admin = Address::generate(e);
-    let oracle_addr = e.register(MockOracle, ());
-    let signer =
-        BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
-    let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
-    let factory = LendFactoryClient::new(e, &e.register(LendFactory, ()));
-    factory.initialize(&admin, usdc, &oracle_addr, &signer, &wasm_hash);
-    factory
+    let oracle = e.register(MockOracle, ());
+    let factory_id =
+        register_factory(e, &Address::generate(e), usdc, &oracle, 1);
+    LendFactoryClient::new(e, &factory_id)
 }
 
 /// `get_amount_in` answers "how much USDC must move to buy N shares", so its

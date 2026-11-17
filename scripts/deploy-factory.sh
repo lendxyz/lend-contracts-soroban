@@ -3,10 +3,17 @@
 # Deploy the Lend contracts to a Stellar network.
 #
 # Builds the wasms, uploads the op-lend wasm (factory deploys op-lend instances
-# from its hash), deploys the factory, then calls `initialize`.
+# from its hash), then deploys the factory. Its setup runs in `__constructor`,
+# inside the deploy transaction, so there is no separate init call to front-run.
 #
 # Network, signer and addresses come from scripts/common.sh (NETWORK, SOURCE,
 # USDC, ORACLE, BACKEND_SIGNER, SIGN_ARGS); override any of them in the env.
+#
+# Required env vars:
+#   FIRST_OP_ID     Id of the first operation this factory creates. When
+#                   replacing a factory, use its `operation_count` + 1 so op ids
+#                   (keyed in the op-lend wallet and rewards) never repeat; 1 on
+#                   a network that never had one.
 #
 # Optional env vars:
 #   ADMIN           Factory admin address (default: address of SOURCE).
@@ -23,7 +30,7 @@ source "$SCRIPT_DIR/common.sh"
 OPLEND_WASM="$WASM_DIR/lend_operation_token.wasm"
 FACTORY_WASM="$WASM_DIR/lend_factory.wasm"
 
-req SOURCE USDC ORACLE BACKEND_SIGNER
+req SOURCE USDC ORACLE BACKEND_SIGNER FIRST_OP_ID
 
 # The contract's backend_signer param is BytesN<32>, so the CLI needs 64 hex
 # chars; a G... strkey is decoded for convenience.
@@ -37,6 +44,7 @@ echo "==> Admin:          $ADMIN"
 echo "==> USDC:           $USDC"
 echo "==> Oracle:         $ORACLE"
 echo "==> Backend signer: $BACKEND_SIGNER"
+echo "==> First op id:    $FIRST_OP_ID"
 
 echo "==> Building wasms..."
 (cd "$REPO_ROOT" && stellar contract build)
@@ -64,9 +72,13 @@ fi
 echo "    op-lend wasm hash: $OPLEND_WASM_HASH"
 
 # Deterministic salt, so re-running after a submission timeout re-derives the same
-# contract id instead of paying for a second factory. Override DEPLOY_SALT (any
-# 32-byte hex) to deploy an additional instance on purpose.
-: "${DEPLOY_SALT:=$(printf '%s' "lend-factory:$NETWORK" | sha256sum | cut -d' ' -f1)}"
+# contract id instead of paying for a second factory. The factory wasm hash is
+# part of it: a new build is a fresh deployment (a constructor cannot re-run on
+# an existing id), while re-running the same build finds the one it deployed.
+# Override DEPLOY_SALT (any 32-byte hex) to deploy an additional instance on
+# purpose.
+FACTORY_WASM_HASH="$(sha256sum "$FACTORY_WASM" | cut -d' ' -f1)"
+: "${DEPLOY_SALT:=$(printf '%s' "lend-factory:$NETWORK:$FACTORY_WASM_HASH" | sha256sum | cut -d' ' -f1)}"
 FACTORY_ID="$(stellar contract id wasm \
   --salt "$DEPLOY_SALT" --source-account "$SOURCE" "${NETWORK_ARGS[@]}")"
 
@@ -80,33 +92,20 @@ else
     --source "$SOURCE" \
     --salt "$DEPLOY_SALT" \
     "${NETWORK_ARGS[@]}" \
-    "${SIGN_ARGS[@]}" | tail -n1)"
+    "${SIGN_ARGS[@]}" \
+    -- \
+    --admin "$ADMIN" \
+    --usdc "$USDC" \
+    --oracle "$ORACLE" \
+    --backend_signer "$BACKEND_SIGNER" \
+    --oplend_wasm_hash "$OPLEND_WASM_HASH" \
+    --first_op_id "$FIRST_OP_ID" | tail -n1)"
   if [ "$DEPLOYED_ID" != "$FACTORY_ID" ]; then
     echo "error: deployed id $DEPLOYED_ID != derived $FACTORY_ID" >&2
     exit 1
   fi
 fi
 echo "    factory id: $FACTORY_ID"
-
-# `initialize` is once-only, so probe a getter that only answers afterwards
-# (--send=no: simulation, no signature, no device).
-if stellar contract invoke --id "$FACTORY_ID" --source "$SOURCE" \
-  "${NETWORK_ARGS[@]}" --send=no -- usdc >/dev/null 2>&1; then
-  echo "==> Factory already initialized, skipping"
-else
-  echo "==> Initializing factory..."
-  stellar contract invoke \
-    --id "$FACTORY_ID" \
-    --source "$SOURCE" \
-    "${NETWORK_ARGS[@]}" \
-    "${SIGN_ARGS[@]}" \
-    -- initialize \
-    --admin "$ADMIN" \
-    --usdc "$USDC" \
-    --oracle "$ORACLE" \
-    --backend_signer "$BACKEND_SIGNER" \
-    --oplend_wasm_hash "$OPLEND_WASM_HASH"
-fi
 
 echo ""
 echo "==> Done."

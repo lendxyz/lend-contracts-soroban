@@ -87,7 +87,7 @@ NONCE="$(jq -r '.nonce' <<<"$PROOF")"
 SIGNATURE="$(jq -r '.signature' <<<"$PROOF")"
 SIGNER_HEX="$(jq -r '.signer_hex' <<<"$PROOF")"
 
-# 3. The contract verifies against the signer stored at initialize /
+# 3. The contract verifies against the signer stored at deploy (constructor) /
 # update_backend_signer. common.sh mirrors it per network, so a mismatch here
 # means the wrong key — catch it before burning a nonce on a failed call.
 EXPECTED_HEX="$(strkey_to_hex "$BACKEND_SIGNER")"

@@ -15,7 +15,7 @@ build:
 # Deploy targets wrap scripts/. Shared config (NETWORK, SOURCE, FACTORY_ID,
 # addresses, Ledger signing) lives in scripts/common.sh; per-run vars are passed
 # on the make line and reach the scripts through the environment.
-#   make deploy-factory
+#   make deploy-factory FIRST_OP_ID=5   # first op id (old factory's operation_count + 1)
 #   make deploy-rewards
 #   make deploy-dummy-usdc
 #   make deploy-op-lend-wallet

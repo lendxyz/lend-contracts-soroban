@@ -11,7 +11,7 @@
 # Instance storage survives an upgrade, so the incoming wasm has to cope with
 # whatever the outgoing one wrote (or migrate it itself). Write-once config is
 # *not* rewritten: e.g. the factory caches its USDC token and that token's
-# decimals at `initialize`, and upgrading does not re-read them.
+# decimals in its constructor, and upgrading does not re-read them.
 #
 # Network, signer and contract ids come from scripts/common.sh. SOURCE must be
 # the target contract's admin.

@@ -8,17 +8,23 @@ identity (`stellar keys generate <name> --network testnet --fund`).
 
 ## `deploy.sh`
 
-Builds the wasms, uploads the op-lend wasm, deploys the factory, and calls
-`initialize`.
+Builds the wasms, uploads the op-lend wasm, and deploys the factory with its
+setup passed as constructor args (no separate `initialize` call to front-run).
 
 ```bash
 SOURCE=alice \
 BACKEND_SIGNER=ab12..\  # backend ed25519 pubkey, 64 hex chars (32 bytes)
+FIRST_OP_ID=5        \  # id of the first operation (see below)
 NETWORK=testnet      \  # optional, default testnet
 ./scripts/deploy.sh
 ```
 
 `USDC` and `ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
+
+`FIRST_OP_ID` is required: the factory numbers operations from it. When
+replacing a factory, pass the old factory's `operation_count` + 1, so op ids
+(which the op-lend wallet registry and the rewards merkle roots are keyed by)
+never repeat. Use `1` on a network that never had a factory.
 
 The op-lend wasm is uploaded once; every operation the factory creates is a new
 op-lend instance deployed from that hash.
