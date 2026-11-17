@@ -184,8 +184,8 @@ impl LendFactory {
 
     /// Swap the factory's own code, keeping the contract id and all state.
     /// Admin-only. Note that instance storage survives, so a new wasm must be
-    /// able to read what the old one wrote (or migrate it itself) — see the
-    /// `UsdcDecimals` fallback in `storage::usdc_decimals`.
+    /// able to read what the old one wrote (or migrate it itself), and the
+    /// constructor does not run again to fill in new keys.
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         st::require_admin(&env);
         env.deployer().update_current_contract_wasm(new_wasm_hash);

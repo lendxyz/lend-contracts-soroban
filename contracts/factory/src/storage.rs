@@ -53,13 +53,13 @@ pub fn set_usdc(e: &Env, usdc: &Address) {
 /// Cached USDC decimals. Circle's USDC is a classic Stellar asset wrapped in a
 /// SAC, so on mainnet it reports 7; the testnet DummyUSDC is deployed with 7
 /// to match.
-/// Contracts initialized before this key existed fall back to the 6 they were
-/// priced against.
+/// Written by the constructor; a missing value means a broken setup, so it
+/// fails instead of pricing against a guessed scale.
 pub fn usdc_decimals(e: &Env) -> u32 {
-    e.storage()
-        .instance()
-        .get(&DataKey::UsdcDecimals)
-        .unwrap_or(7)
+    match e.storage().instance().get(&DataKey::UsdcDecimals) {
+        Some(decimals) => decimals,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
 }
 
 pub fn usdc_client(e: &Env) -> token::Client<'_> {

@@ -238,6 +238,26 @@ fn test_get_amount_in_out() {
     assert_eq!(s.factory.get_amount_out(&id, &1100), 100);
 }
 
+/// AUDIT Factory C12: a missing cached scale (USDC or oracle decimals) fails
+/// the quote instead of silently pricing with a guessed 6 decimals.
+#[test]
+fn test_missing_decimals_fail_instead_of_defaulting() {
+    use crate::types::DataKey;
+
+    for key in [DataKey::UsdcDecimals, DataKey::OracleDecimals] {
+        let s = setup();
+        let (id, _) = create_op(&s, 1000);
+        s.e.as_contract(&s.factory_id, || {
+            s.e.storage().instance().remove(&key);
+        });
+
+        assert_eq!(
+            s.factory.try_get_amount_in(&id, &100),
+            Err(Ok(Error::NotInitialized.into()))
+        );
+    }
+}
+
 /// `upgrade` really swaps the executable: after pointing the factory at the
 /// op-lend wasm, the instance no longer answers factory calls. Nothing else in
 /// the repo could catch a no-op upgrade, since the contract id never changes.

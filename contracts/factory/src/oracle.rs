@@ -49,7 +49,12 @@ pub fn get_eur_usd_price(e: &Env) -> i128 {
         Some(oracle) => oracle,
         None => panic_with_error!(e, Error::NotInitialized),
     };
-    let decimals: u32 = instance.get(&DataKey::OracleDecimals).unwrap_or(6);
+    // Written with the oracle (constructor / `update_oracle_address`); never
+    // guess a scale if it is missing.
+    let decimals: u32 = match instance.get(&DataKey::OracleDecimals) {
+        Some(decimals) => decimals,
+        None => panic_with_error!(e, Error::NotInitialized),
+    };
 
     let asset = Asset::Other(symbol_short!("EUR"));
     let data = match OracleClient::new(e, &oracle).lastprice(&asset) {

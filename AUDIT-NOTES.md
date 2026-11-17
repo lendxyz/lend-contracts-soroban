@@ -173,3 +173,14 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   the public interface (`create_operation` argument, `Operation` field from
   `get_operation`) that `lend-app` and the scripts read, so it is kept to avoid
   breaking them.
+
+## Factory: no silent default for cached decimals
+
+> Addresses **Factory C12**
+
+- `usdc_decimals` and the oracle decimals read in `get_eur_usd_price` fell
+  back to a hard-coded scale when their cached value was missing, so pricing
+  would run against a guessed scale instead of failing.
+- Both now fail with `NotInitialized`, like the other config reads. The
+  constructor always writes both (and `update_oracle_address` rewrites the
+  oracle one), so only a broken setup can reach this.
