@@ -404,8 +404,9 @@ fn nonce_used(nonce: String) -> bool
 
 ## Building
 
-Requires the [Stellar CLI](https://developers.stellar.org/docs/tools/cli) and a
-Rust toolchain with the `wasm32v1-none` target.
+Requires the [Stellar CLI](https://developers.stellar.org/docs/tools/cli) 30.0.1
+(stellar-xdr 30.0.0, pinned in [`scripts/stellar-cli.sh`](scripts/stellar-cli.sh))
+and a Rust toolchain with the `wasm32v1-none` target.
 
 ```sh
 make build          # stellar contract build  (+ prints WASM sizes)

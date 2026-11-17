@@ -11,23 +11,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Install Rust (stable + wasm32v1-none)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32v1-none
+      # Installs exactly what rust-toolchain.toml pins (rustc 1.99.1 +
+      # wasm32v1-none + rustfmt) instead of relying on rustup's deprecated
+      # auto-install of the active toolchain.
+      - name: Install Rust (from rust-toolchain.toml)
+        run: |
+          rustup toolchain install
+          rustc --version
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
       # Prebuilt stellar-cli binary (avoids the slow source build + its
       # libdbus-sys system dependency). libdbus-1.so.3 runtime is preinstalled.
+      # The version comes from scripts/stellar-cli.sh, which the scripts
+      # enforce too; the final check fails the job if the binary drifts.
       - name: Install Stellar CLI
-        env:
-          STELLAR_CLI_VERSION: 26.1.0
         run: |
+          source scripts/stellar-cli.sh
           curl -sSL "https://github.com/stellar/stellar-cli/releases/download/v${STELLAR_CLI_VERSION}/stellar-cli-${STELLAR_CLI_VERSION}-x86_64-unknown-linux-gnu.tar.gz" \
             | sudo tar -xz -C /usr/local/bin stellar
           stellar --version
+          require_stellar_cli
 
       # Builds both contract wasms (factory tests contractimport! the op-lend
       # wasm), then runs the full workspace test suite.

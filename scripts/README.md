@@ -1,7 +1,10 @@
 # Deploy scripts
 
-Bash helpers around the `stellar` CLI. Require `stellar` (v26+) installed and an
-identity created (`stellar keys generate <name> --network testnet --fund`).
+Bash helpers around the `stellar` CLI. Require exactly `stellar` 30.0.1
+(stellar-xdr 30.0.0), pinned in [`stellar-cli.sh`](stellar-cli.sh): every
+script aborts under any other version, and CI installs the same release. Install
+it with `cargo install --locked stellar-cli --version 30.0.1`, and create an
+identity (`stellar keys generate <name> --network testnet --fund`).
 
 ## `deploy.sh`
 

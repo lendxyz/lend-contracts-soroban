@@ -26,6 +26,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 WASM_DIR="$REPO_ROOT/target/wasm32v1-none/release"
 
+# Every script runs against the one pinned Stellar CLI (scripts/stellar-cli.sh).
+source "$SCRIPT_DIR/stellar-cli.sh"
+require_stellar_cli || exit 1
+
 NETWORK="${NETWORK:-testnet}"
 
 case "$NETWORK" in
@@ -75,7 +79,7 @@ case "$NETWORK" in
     #
     #   stellar keys add lend-mainnet --ledger --hd-path 0
     #
-    # Needs stellar-cli >= 26.1.0 (guarded below). The hd path belongs to the
+    # Needs stellar-cli >= 26.1.0 (pinned is newer). The hd path belongs to the
     # identity from then on: passing --hd-path to a signing call is an error, and
     # there is no LEDGER_HD_PATH knob here. To move to another index, re-register:
     #
@@ -142,19 +146,6 @@ export STELLAR_INCLUSION_FEE="$INCLUSION_FEE"
 # on it.
 SIGN_ARGS=()
 if [ "$SIGN_WITH_LEDGER" = "1" ]; then
-  # Signing Soroban auth entries from a device landed in stellar-cli 26.1.0
-  # (#2569). Before that, the contract subcommands ask $SOURCE for a secret and
-  # die with "Ledger cannot reveal private keys" (or "Address cannot be used to
-  # sign" for a plain G...), no matter what --sign-with-* says — that path only
-  # covers `tx sign`, not the auth entries every contract call carries.
-  CLI_VERSION="$(stellar --version 2>/dev/null | head -1 | awk '{print $2}')"
-  if [ "$(printf '%s\n26.1.0\n' "$CLI_VERSION" | sort -V | head -1)" != "26.1.0" ]
-  then
-    echo "error: stellar-cli $CLI_VERSION cannot sign contract calls with a Ledger." >&2
-    echo "       Upgrade to >= 26.1.0, then register the device once:" >&2
-    echo "         stellar keys add $SOURCE --ledger --hd-path 0" >&2
-    exit 1
-  fi
   # No --hd-path: the identity owns it, and passing it here is rejected with
   # "--hd-path is fixed at the time a Ledger identity is added".
   SIGN_ARGS=(--sign-with-ledger)
