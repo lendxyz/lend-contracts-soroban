@@ -375,6 +375,27 @@ fn test_set_admin() {
     assert_eq!(token.balance(&user1), 10);
 }
 
+/// AUDIT OpLend C3: only the admin (the factory in production) can swap the
+/// token's code. The hash is a real upload, so the only failure left is auth.
+#[test]
+fn test_upgrade_is_admin_only() {
+    let e = Env::default();
+    let admin = Address::generate(&e);
+    let token = create_token(&e, &admin);
+    let hash = e.deployer().upload_contract_wasm(OWN_WASM);
+
+    assert!(token.try_upgrade(&hash).is_err());
+
+    e.mock_all_auths();
+    token.upgrade(&hash);
+    assert_eq!(e.auths()[0].0, admin);
+}
+
+/// This crate's own built wasm, uploaded as a valid upgrade target.
+const OWN_WASM: &[u8] = include_bytes!(
+    "../../../target/wasm32v1-none/release/lend_operation_token.wasm"
+);
+
 #[test]
 fn transfer_insufficient_balance() {
     let e = Env::default();

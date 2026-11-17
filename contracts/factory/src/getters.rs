@@ -1,10 +1,14 @@
-use soroban_sdk::{Address, Env};
+use soroban_sdk::{Address, BytesN, Env};
 
 use crate::storage as st;
 use crate::types::{Operation, F_CANCELED, F_PAUSED, F_STARTED, F_WITHDRAWN};
 
 pub fn usdc(e: &Env) -> Address {
     st::read_usdc(e)
+}
+
+pub fn oplend_wasm_hash(e: &Env) -> BytesN<32> {
+    st::read_oplend_wasm_hash(e)
 }
 
 pub fn operation_count(e: &Env) -> u32 {

@@ -204,6 +204,14 @@ impl OpLendToken {
         SetAdmin { admin, new_admin }.publish(&e);
     }
 
+    /// Swaps this token's code, keeping its id, balances and whitelist.
+    /// Admin-only; in production the admin is the factory, so this runs
+    /// through `factory.oplend_upgrade`.
+    pub fn upgrade(e: Env, new_wasm_hash: BytesN<32>) {
+        require_admin(&e);
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
     pub fn get_allowance(
         e: Env,
         from: Address,

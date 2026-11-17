@@ -91,3 +91,20 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   fails with `OperationNotStarted`, like `invest`.
 - Both paths share one guard (`load_started`: not finished, then started), so
   they cannot drift apart again.
+
+## OpLend: upgradable through the factory
+
+> Addresses **OpLend C3**
+
+- op-lend gains `upgrade(new_wasm_hash)`, admin-only like the factory and
+  wallet ones. Its admin is the factory, so the call goes through the new
+  `factory.oplend_upgrade(op_id, new_wasm_hash)`.
+- `oplend_upgrade` also stores the hash as the code later `create_operation`
+  calls deploy from (same slot as `set_oplend_wasm_hash`). If the token upgrade
+  fails the whole call reverts, so the stored hash never points at code that
+  did not install. New getter: `oplend_wasm_hash()`.
+- `scripts/upgrade-contract.sh` supports `CONTRACT=oplend OP_ID=<id>`: it finds
+  the token through `get_operation`, upgrades it via the factory, then checks
+  both the token's live code and the factory's stored hash.
+- Tokens created by the old factory run op-lend code without `upgrade()` and
+  stay frozen; only operations from the fresh deployment can be upgraded.

@@ -71,6 +71,18 @@ pub fn read_backend_signer(e: &Env) -> BytesN<32> {
     }
 }
 
+/// Code every new operation's op-lend token is deployed from.
+pub fn read_oplend_wasm_hash(e: &Env) -> BytesN<32> {
+    match e.storage().instance().get(&DataKey::OpLendWasmHash) {
+        Some(hash) => hash,
+        None => panic_with_error!(e, Error::NotInitialized),
+    }
+}
+
+pub fn write_oplend_wasm_hash(e: &Env, hash: &BytesN<32>) {
+    e.storage().instance().set(&DataKey::OpLendWasmHash, hash);
+}
+
 pub fn operation_count(e: &Env) -> u32 {
     e.storage()
         .instance()

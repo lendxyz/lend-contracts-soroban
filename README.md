@@ -103,8 +103,9 @@ Responsibilities:
   return escrowed USDC; `withdraw_usdc` releases the raised funds not yet
   withdrawn, any time after an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
-  `oplend_whitelist_user`, `oplend_update_backend_signer`, and
-  `oplend_admin_burn`.
+  `oplend_whitelist_user`, `oplend_update_backend_signer`, `oplend_void_nonce`,
+  `oplend_admin_burn`, and `oplend_upgrade` (which also makes the new wasm the
+  code later operations deploy from).
 - **Pricing helpers**: `get_amount_in` / `get_amount_out` quote shares ↔ USDC.
 
 Key invariants enforced on every invest path (`invest_guards`): operation
@@ -324,6 +325,7 @@ fn blacklist(user, state: bool)
 fn oplend_whitelist_user(op_id: u32, user, state: bool)
 fn oplend_update_backend_signer(op_id: u32, new_signer: BytesN<32>)
 fn oplend_admin_burn(op_id: u32, user, value: i128)
+fn oplend_upgrade(op_id: u32, new_wasm_hash: BytesN<32>)   // upgrades that token + sets the hash new ops deploy from
 fn transfer_ownership(new_admin)
 
 // Getters
@@ -340,6 +342,7 @@ fn usdc_withdrawn_amount(id) -> i128
 fn usdc_raised_per_client(id, user) -> i128
 fn blacklisted(user) -> bool
 fn usdc() -> Address
+fn oplend_wasm_hash() -> BytesN<32>                        // code new operations deploy from
 ```
 
 ### OpLend token (`OpLendToken`)
@@ -365,6 +368,7 @@ fn whitelist_user_admin(user, state: bool)                 // admin
 fn whitelist_user(user, nonce: String, signature: BytesN<64>)
 fn update_backend_signer(new_signer: BytesN<32>)           // admin
 fn set_admin(new_admin)                                    // admin
+fn upgrade(new_wasm_hash: BytesN<32>)                      // admin (the factory: use oplend_upgrade)
 fn is_whitelisted(user) -> bool
 fn total_supply() -> i128
 fn max_supply() -> i128

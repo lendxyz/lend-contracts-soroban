@@ -12,6 +12,7 @@ pub trait OpLendInterface {
     fn update_backend_signer(env: Env, new_signer: BytesN<32>);
     fn void_nonce(env: Env, nonce: String, signature: Option<BytesN<64>>);
     fn balance(env: Env, id: Address) -> i128;
+    fn upgrade(env: Env, new_wasm_hash: BytesN<32>);
 }
 
 /// Public view of an operation, returned by `operations` / `get_operation`.

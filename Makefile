@@ -34,6 +34,7 @@ build:
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...
 #   make upgrade-contract CONTRACT=factory   # in place, same id + state
 #   make upgrade-contract CONTRACT=wallet
+#   make upgrade-contract CONTRACT=oplend OP_ID=5   # via the factory; also sets the hash new ops use
 #
 # Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
 #   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000

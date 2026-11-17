@@ -14,13 +14,17 @@
 # decimals in its constructor, and upgrading does not re-read them.
 #
 # Network, signer and contract ids come from scripts/common.sh. SOURCE must be
-# the target contract's admin.
+# the target contract's admin. An op-lend token's admin is the factory, so
+# CONTRACT=oplend goes through `factory.oplend_upgrade` (SOURCE = factory
+# admin), which also makes the new wasm the code later operations deploy from.
 #
 # Required env vars:
-#   CONTRACT       Which contract to upgrade: factory | rewards | wallet.
+#   CONTRACT       Which contract to upgrade: factory | rewards | wallet | oplend.
+#   OP_ID          With CONTRACT=oplend: the operation whose token to upgrade.
 #
 # Optional env vars:
-#   CONTRACT_ID    Override the id resolved from common.sh.
+#   CONTRACT_ID    Override the id resolved from common.sh (or, for oplend,
+#                  from the factory's `get_operation`).
 #   WASM           Override the built wasm path.
 #   BUILD          1 (default) to rebuild first; 0 to use target/ as-is.
 #
@@ -28,6 +32,7 @@
 #   CONTRACT=factory ./scripts/upgrade-contract.sh
 #   CONTRACT=rewards NETWORK=mainnet ./scripts/upgrade-contract.sh
 #   CONTRACT=wallet ./scripts/upgrade-contract.sh
+#   CONTRACT=oplend OP_ID=5 ./scripts/upgrade-contract.sh
 #
 set -euo pipefail
 
@@ -37,6 +42,7 @@ source "$SCRIPT_DIR/common.sh"
 req SOURCE CONTRACT
 need_bin stellar sha256sum
 
+VIA_FACTORY=0
 case "$CONTRACT" in
   factory)
     : "${CONTRACT_ID:=${FACTORY_ID:-}}"
@@ -53,8 +59,20 @@ case "$CONTRACT" in
     : "${WASM:=$WASM_DIR/lend_wallet.wasm}"
     DEPLOY_SCRIPT="scripts/deploy-op-lend-wallet.sh"
     ;;
+  oplend | op-lend)
+    req OP_ID FACTORY_ID
+    need_bin jq
+    VIA_FACTORY=1
+    if [ -z "${CONTRACT_ID:-}" ]; then
+      CONTRACT_ID="$(stellar contract invoke --id "$FACTORY_ID" \
+        --source "$SOURCE" "${NETWORK_ARGS[@]}" --send=no \
+        -- get_operation --id "$OP_ID" | jq -r '.op_token')"
+    fi
+    : "${WASM:=$WASM_DIR/lend_operation_token.wasm}"
+    DEPLOY_SCRIPT="scripts/create-operation.sh"
+    ;;
   *)
-    echo "error: CONTRACT must be factory | rewards | wallet (got '$CONTRACT')" >&2
+    echo "error: CONTRACT must be factory | rewards | wallet | oplend (got '$CONTRACT')" >&2
     exit 1
     ;;
 esac
@@ -75,8 +93,13 @@ echo "==> Checking the deployed contract exposes upgrade()..."
 if ! stellar contract info interface --id "$CONTRACT_ID" "${NETWORK_ARGS[@]}" \
   | grep -q 'fn upgrade'; then
   echo "error: $CONTRACT_ID has no upgrade() entrypoint, so its code is frozen." >&2
-  echo "       Deploy a fresh instance instead ($DEPLOY_SCRIPT)," >&2
-  echo "       then record the new id in DEPLOYMENTS.md + scripts/common.sh." >&2
+  if [ "$VIA_FACTORY" = "1" ]; then
+    echo "       This op-lend token predates op-lend upgrade(); only operations" >&2
+    echo "       created from a newer op-lend wasm can be upgraded." >&2
+  else
+    echo "       Deploy a fresh instance instead ($DEPLOY_SCRIPT)," >&2
+    echo "       then record the new id in DEPLOYMENTS.md + scripts/common.sh." >&2
+  fi
   exit 1
 fi
 
@@ -98,25 +121,44 @@ if [ "$BEFORE_HASH" = "$NEW_HASH" ]; then
   exit 0
 fi
 
-echo "==> Uploading new wasm..."
-UPLOADED_HASH="$(stellar contract upload \
-  --wasm "$WASM" \
-  --source "$SOURCE" \
-  "${NETWORK_ARGS[@]}" \
-  "${SIGN_ARGS[@]}" | tail -n1)"
-if [ "$UPLOADED_HASH" != "$NEW_HASH" ]; then
-  echo "error: uploaded hash $UPLOADED_HASH != local sha256 $NEW_HASH" >&2
-  exit 1
+# Uploading is skipped when the wasm is already on chain, e.g. when upgrading a
+# second operation's op-lend to the same build.
+if stellar contract fetch --wasm-hash "$NEW_HASH" \
+  "${NETWORK_ARGS[@]}" -o /dev/null 2>/dev/null; then
+  echo "==> Wasm already uploaded, skipping"
+else
+  echo "==> Uploading new wasm..."
+  UPLOADED_HASH="$(stellar contract upload \
+    --wasm "$WASM" \
+    --source "$SOURCE" \
+    "${NETWORK_ARGS[@]}" \
+    "${SIGN_ARGS[@]}" | tail -n1)"
+  if [ "$UPLOADED_HASH" != "$NEW_HASH" ]; then
+    echo "error: uploaded hash $UPLOADED_HASH != local sha256 $NEW_HASH" >&2
+    exit 1
+  fi
 fi
 
-echo "==> Upgrading $CONTRACT_ID..."
-stellar contract invoke \
-  --id "$CONTRACT_ID" \
-  --source "$SOURCE" \
-  "${NETWORK_ARGS[@]}" \
-  "${SIGN_ARGS[@]}" \
-  -- upgrade \
-  --new_wasm_hash "$NEW_HASH"
+if [ "$VIA_FACTORY" = "1" ]; then
+  echo "==> Upgrading $CONTRACT_ID through the factory (operation $OP_ID)..."
+  stellar contract invoke \
+    --id "$FACTORY_ID" \
+    --source "$SOURCE" \
+    "${NETWORK_ARGS[@]}" \
+    "${SIGN_ARGS[@]}" \
+    -- oplend_upgrade \
+    --op_id "$OP_ID" \
+    --new_wasm_hash "$NEW_HASH"
+else
+  echo "==> Upgrading $CONTRACT_ID..."
+  stellar contract invoke \
+    --id "$CONTRACT_ID" \
+    --source "$SOURCE" \
+    "${NETWORK_ARGS[@]}" \
+    "${SIGN_ARGS[@]}" \
+    -- upgrade \
+    --new_wasm_hash "$NEW_HASH"
+fi
 
 echo "==> Verifying the live code changed..."
 stellar contract fetch --id "$CONTRACT_ID" "${NETWORK_ARGS[@]}" \
@@ -125,6 +167,16 @@ AFTER_HASH="$(sha256sum "$AFTER_WASM" | cut -d' ' -f1)"
 if [ "$AFTER_HASH" != "$NEW_HASH" ]; then
   echo "error: $CONTRACT_ID still runs $AFTER_HASH" >&2
   exit 1
+fi
+
+if [ "$VIA_FACTORY" = "1" ]; then
+  echo "==> Verifying the factory deploys new operations from it..."
+  STORED_HASH="$(stellar contract invoke --id "$FACTORY_ID" --source "$SOURCE" \
+    "${NETWORK_ARGS[@]}" --send=no -- oplend_wasm_hash | tr -d '"')"
+  if [ "$STORED_HASH" != "$NEW_HASH" ]; then
+    echo "error: factory still deploys op-lend from $STORED_HASH" >&2
+    exit 1
+  fi
 fi
 
 echo ""

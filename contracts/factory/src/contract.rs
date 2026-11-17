@@ -34,7 +34,7 @@ impl LendFactory {
         let instance = env.storage().instance();
         instance.set(&DataKey::Admin, &admin);
         instance.set(&DataKey::BackendSigner, &backend_signer);
-        instance.set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
+        st::write_oplend_wasm_hash(&env, &oplend_wasm_hash);
 
         st::set_operation_count(&env, first_op_id - 1);
         st::set_usdc(&env, &usdc);
@@ -45,9 +45,7 @@ impl LendFactory {
     pub fn set_oplend_wasm_hash(env: Env, oplend_wasm_hash: BytesN<32>) {
         st::require_admin(&env);
         st::bump_instance(&env);
-        env.storage()
-            .instance()
-            .set(&DataKey::OpLendWasmHash, &oplend_wasm_hash);
+        st::write_oplend_wasm_hash(&env, &oplend_wasm_hash);
     }
 
     // --- Operations ---
@@ -171,6 +169,12 @@ impl LendFactory {
         admin::oplend_void_nonce(&env, op_id, nonce);
     }
 
+    /// Upgrades operation `op_id`'s op-lend token and makes `new_wasm_hash`
+    /// the code later `create_operation` calls deploy from.
+    pub fn oplend_upgrade(env: Env, op_id: u32, new_wasm_hash: BytesN<32>) {
+        admin::oplend_upgrade(&env, op_id, new_wasm_hash);
+    }
+
     pub fn oplend_admin_burn(env: Env, op_id: u32, user: Address, value: i128) {
         admin::oplend_admin_burn(&env, op_id, user, value);
     }
@@ -197,6 +201,10 @@ impl LendFactory {
 
     pub fn usdc(env: Env) -> Address {
         getters::usdc(&env)
+    }
+
+    pub fn oplend_wasm_hash(env: Env) -> BytesN<32> {
+        getters::oplend_wasm_hash(&env)
     }
 
     pub fn operation_count(env: Env) -> u32 {

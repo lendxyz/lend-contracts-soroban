@@ -135,6 +135,17 @@ pub fn oplend_void_nonce(e: &Env, op_id: u32, nonce: String) {
     OpLendClient::new(e, &op.op_token).void_nonce(&nonce, &None);
 }
 
+/// Upgrades one operation's op-lend token (the factory is its admin), then
+/// stores the hash for future operations. If the upgrade fails the whole call
+/// reverts, so the stored hash never points at code that did not install.
+pub fn oplend_upgrade(e: &Env, op_id: u32, new_wasm_hash: BytesN<32>) {
+    st::require_admin(e);
+    st::bump_instance(e);
+    let op = st::read_op(e, op_id);
+    OpLendClient::new(e, &op.op_token).upgrade(&new_wasm_hash);
+    st::write_oplend_wasm_hash(e, &new_wasm_hash);
+}
+
 pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
     st::require_admin(e);
     st::bump_instance(e);

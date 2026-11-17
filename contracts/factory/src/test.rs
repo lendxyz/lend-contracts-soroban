@@ -456,6 +456,39 @@ fn test_oplend_void_nonce_blocks_the_whitelist_signature() {
     assert!(!op_token.is_whitelisted(&user));
 }
 
+/// Stand-in "new op-lend code" for the upgrade test: any other wasm will do.
+const OTHER_WASM: &[u8] =
+    include_bytes!("../../../target/wasm32v1-none/release/lend_wallet.wasm");
+
+/// AUDIT OpLend C3: op-lend tokens are upgradable through the factory, which
+/// also deploys later operations from the new code.
+#[test]
+fn test_oplend_upgrade_swaps_code_and_future_deploys() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 1000);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+    assert_eq!(op_token.total_supply(), 0);
+
+    let new_hash = s.e.deployer().upload_contract_wasm(OTHER_WASM);
+    s.factory.oplend_upgrade(&id, &new_hash);
+
+    assert_eq!(s.factory.oplend_wasm_hash(), new_hash);
+    // Same id, other code: the wallet wasm has no `total_supply`.
+    assert!(op_token.try_total_supply().is_err());
+}
+
+#[test]
+fn test_oplend_upgrade_requires_factory_admin() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    let old_hash = s.factory.oplend_wasm_hash();
+    let new_hash = s.e.deployer().upload_contract_wasm(OTHER_WASM);
+
+    s.e.set_auths(&[]);
+    assert!(s.factory.try_oplend_upgrade(&id, &new_hash).is_err());
+    assert_eq!(s.factory.oplend_wasm_hash(), old_hash);
+}
+
 #[test]
 fn test_blacklisted_user_cannot_invest() {
     let s = setup();

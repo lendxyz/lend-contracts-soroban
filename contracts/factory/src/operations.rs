@@ -5,7 +5,7 @@ use soroban_sdk::{
 use crate::errors::Error;
 use crate::events;
 use crate::storage as st;
-use crate::types::{DataKey, OpData, F_CANCELED, F_PAUSED, F_STARTED};
+use crate::types::{OpData, F_CANCELED, F_PAUSED, F_STARTED};
 use crate::utils::{op_symbol, prefixed};
 
 pub fn create_operation(
@@ -37,11 +37,7 @@ pub fn create_operation(
     let mut salt = [0u8; 32];
     salt[28..32].copy_from_slice(&id.to_be_bytes());
 
-    let wasm_hash: BytesN<32> =
-        match e.storage().instance().get(&DataKey::OpLendWasmHash) {
-            Some(hash) => hash,
-            None => panic_with_error!(e, Error::NotInitialized),
-        };
+    let wasm_hash = st::read_oplend_wasm_hash(e);
     let op_token = e
         .deployer()
         .with_current_contract(BytesN::from_array(e, &salt))
