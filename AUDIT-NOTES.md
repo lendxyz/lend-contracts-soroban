@@ -379,3 +379,15 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   shared `settle_claim`, so it applies to every epoch of a batch and to
   `claim_op_epoch` alike; one bad entry rejects the whole batch before
   anything is marked claimed or paid.
+
+## Rewards: reward token fixed at deployment
+
+> Addresses **Rewards C2**
+
+- `set_reward_token` (and its `RewardTokenUpdated` event) is removed: the
+  token is written once by the constructor. Tree leaves carry only amounts,
+  so a switch changed the meaning of every unclaimed amount, could block
+  claims until the new token was funded, and freed the old token for
+  `emergency_withdraw`. Another reward token means another rewards contract.
+- The deployed rewards contract is upgraded in place: its stored token stays
+  as it is and simply can no longer change.

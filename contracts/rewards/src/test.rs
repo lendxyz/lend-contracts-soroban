@@ -297,17 +297,14 @@ fn test_emergency_withdraw_reward_token_fails() {
 }
 
 #[test]
-fn test_set_reward_token_and_admin() {
+fn test_set_admin_hands_over_the_admin_paths() {
     let s = setup();
-    let new_token = Address::generate(&s.e);
-    s.rewards.set_reward_token(&new_token);
-    assert_eq!(s.rewards.reward_token(), new_token);
-
     let new_admin = Address::generate(&s.e);
     s.rewards.set_admin(&new_admin);
-    // new admin can set reward token back
-    s.rewards.set_reward_token(&s.usdc_addr);
-    assert_eq!(s.rewards.reward_token(), s.usdc_addr);
+
+    // Admin calls now need the new admin's auth.
+    s.rewards.set_admin(&s.admin);
+    assert_eq!(s.e.auths()[0].0, new_admin);
 }
 
 /// Leaves and roots must stay byte-compatible with the off-chain builder

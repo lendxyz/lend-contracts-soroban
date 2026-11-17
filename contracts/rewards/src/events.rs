@@ -1,12 +1,6 @@
 use soroban_sdk::{contractevent, Address};
 
 #[contractevent]
-pub struct RewardTokenUpdated {
-    #[topic]
-    pub new_token: Address,
-}
-
-#[contractevent]
 pub struct EmergencyWithdrawn {
     #[topic]
     pub token: Address,

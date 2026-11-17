@@ -117,6 +117,9 @@ fn transfer_rewards(e: &Env, op_id: u32, user: &Address, balance: i128) {
 
 #[contractimpl]
 impl LendRewards {
+    /// `reward_token` is written once, here: tree leaves carry only amounts,
+    /// so switching tokens would change what every unclaimed amount means. To
+    /// distribute another token, deploy another rewards contract.
     pub fn __constructor(e: Env, admin: Address, reward_token: Address) {
         e.storage().instance().set(&DataKey::Admin, &admin);
         e.storage()
@@ -164,15 +167,6 @@ impl LendRewards {
     }
 
     // ********** Admin: config **********
-
-    pub fn set_reward_token(e: Env, new_token: Address) {
-        require_admin(&e);
-        bump_instance(&e);
-        e.storage()
-            .instance()
-            .set(&DataKey::RewardToken, &new_token);
-        events::RewardTokenUpdated { new_token }.publish(&e);
-    }
 
     pub fn set_admin(e: Env, new_admin: Address) {
         require_admin(&e);

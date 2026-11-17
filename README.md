@@ -187,7 +187,9 @@ at the factory with `set_factory` (`scripts/wallet-set-factory.sh`).
 Merkle-based reward distribution for operation rewards indexed by epoch. The admin publishes a merkle root and funds the allocation;
 users claim with a merkle proof. Roots are immutable once set, claims are
 idempotent per `(scope, epoch, user)`, and the contract is upgradeable
-(admin-gated `upgrade`).
+(admin-gated `upgrade`). The reward token is set once in the constructor and
+cannot be changed: tree leaves carry only amounts, so another token means
+another rewards contract.
 
 ### DummyUSDC
 
