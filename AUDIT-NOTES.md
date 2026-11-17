@@ -34,3 +34,22 @@ the backend signature carrying it can never be used.
     allowance as usual.
 - `admin_burn` is removed; `burn` replaces it. The factory's refunds and
   `oplend_admin_burn` now call `burn`.
+
+## Factory: predeposit / gift / claim removed
+
+> Addresses **Factory C3**
+
+The deprecated pre-deposit, gift and claim feature is removed from the factory:
+
+- Entry points: `predeposit`, `gift_op_tokens`, `claim_op_tokens`,
+  `claim_op_tokens_batch`, `set_predeposits`, and the getters
+  `predeposits_open`, `predeposits`, `gifted`, `claimable_total`.
+- Events: `Predeposit`, `Gifted`, `ClaimedOpToken`, `PredepositsOpen`,
+  `PredepositsClosed`.
+- Errors retired (codes not reused): `OperationAlreadyStarted` (6),
+  `PredepositsClosed` (9), `BatchTooLarge` (15).
+- Storage: the `F_PREDEPOSITS` flag bit, and `Position.predeposited` /
+  `Position.gifted` (`Position` now only holds `invested`). Fresh deployment,
+  so no stored data needs migrating.
+- Operations now start only through `start_operation`; filling one no longer
+  starts it automatically.

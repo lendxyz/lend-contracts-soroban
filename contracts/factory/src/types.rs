@@ -27,7 +27,6 @@ pub struct Operation {
 pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
-pub const F_PREDEPOSITS: u32 = 1 << 3;
 /// Set on the first `withdraw_usdc`; the amount lives under
 /// `DataKey::UsdcWithdrawn`.
 pub const F_WITHDRAWN: u32 = 1 << 4;
@@ -47,7 +46,7 @@ pub struct OpData {
     pub eur_per_shares: i128,
     pub funding_progress: i128,
     pub usdc_raised: i128,
-    /// Bit set of `F_*`; five booleans as five map fields would be rewritten
+    /// Bit set of `F_*`; four booleans as four map fields would be rewritten
     /// on every invest.
     pub flags: u32,
 }
@@ -84,22 +83,10 @@ impl OpData {
 pub struct Position {
     /// USDC paid in by this user.
     pub invested: i128,
-    /// Shares predeposited before the operation started, awaiting claim.
-    pub predeposited: i128,
-    /// Shares gifted by the admin, awaiting claim.
-    pub gifted: i128,
 }
 
 impl Position {
-    pub const ZERO: Position = Position {
-        invested: 0,
-        predeposited: 0,
-        gifted: 0,
-    };
-
-    pub fn claimable(&self) -> i128 {
-        self.predeposited + self.gifted
-    }
+    pub const ZERO: Position = Position { invested: 0 };
 }
 
 #[contracttype(export = false)]

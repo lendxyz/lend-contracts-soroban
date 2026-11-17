@@ -72,10 +72,8 @@ stand-in).
 create_operation ──► [created] ──► start_operation ──► [open] ──► funding fills ──► [finished]
                           │                               │
                           │                               ├─ pause_funding(true/false)
-                          │                               ├─ invest / fiat_invest / gift_op_tokens
+                          │                               ├─ invest / fiat_invest
                           │                               └─ withdraw_usdc (any time once started, repeatable)
-                          │
-                          ├─ set_predeposits(true) ──► predeposit ... ──► (auto-start when filled) ──► claim_op_tokens
                           │
                           └─ cancel_operation ──► [canceled] ──► refund_user / batch_refund_users
 ```
@@ -96,15 +94,11 @@ with `InsufficientEscrow`, since all operations share one USDC balance.
 
 Responsibilities:
 
-- **Operation management**: create, start, pause/resume, open/close
-  pre-deposits, and cancel operations.
-- **Investment processing**: `invest` (on-chain USDC), `fiat_invest` (USDC
-  settled off-chain, tokens minted to a holder), `gift_op_tokens` (admin gift),
-  and `predeposit` (commit before an operation officially starts). All
-  signature-gated paths verify a backend ed25519 signature and consume a
-  single-use nonce.
-- **Claiming**: `claim_op_tokens` / `claim_op_tokens_batch` mint the OpLend
-  tokens accumulated through pre-deposits and gifts.
+- **Operation management**: create, start, pause/resume, and cancel
+  operations.
+- **Investment processing**: `invest` (on-chain USDC) and `fiat_invest` (USDC
+  settled off-chain, tokens minted to a holder). Both verify a backend ed25519
+  signature and consume a single-use nonce.
 - **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn OpLend and
   return escrowed USDC; `withdraw_usdc` releases the raised funds not yet
   withdrawn, any time after an operation starts.
@@ -204,7 +198,7 @@ Canonical messages (byte-concatenated):
 
 | Call           | Message |
 | -------------- | ------- |
-| `invest` / `predeposit` | `"ONCHAIN_INVEST"` ‖ contract_address ‖ `id` (BE u32) ‖ user ‖ `amount` (BE i128) ‖ `nonce` |
+| `invest`       | `"ONCHAIN_INVEST"` ‖ contract_address ‖ `id` (BE u32) ‖ user ‖ `amount` (BE i128) ‖ `nonce` |
 | `fiat_invest`  | `"FIAT_INVEST"` ‖ contract_address ‖ `id` ‖ user ‖ oplend_holder ‖ `amount` ‖ `nonce` |
 | OpLend `whitelist_user` | contract_address ‖ user ‖ `nonce` |
 | OpLendWallet `redeem` | `"OP_REDEEM"` ‖ contract_address ‖ `op_id` (BE u32) ‖ destination ‖ `amount` (BE i128) ‖ `nonce` |
@@ -275,9 +269,9 @@ touch a dozen entries.
 
 | Key | Holds | Replaces |
 | --- | --- | --- |
-| `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / predeposits-open / withdrawn bits in one `u32` | 8 separate per-operation keys |
+| `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / withdrawn bits in one `u32` | 8 separate per-operation keys |
 | `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
-| `Position(id, user)` | USDC invested, predeposited shares, gifted shares | 3 separate per-(op, user) keys |
+| `Position(id, user)` | USDC invested | (per-(op, user) mapping) |
 | `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
 
 `Operation` — the struct returned by `operations` / `get_operation` — is
@@ -313,15 +307,10 @@ fn create_operation(op_name: String, total_shares: i128, eur_per_shares: i128) -
 fn start_operation(id: u32)
 fn cancel_operation(id: u32)
 fn pause_funding(id: u32, state: bool)
-fn set_predeposits(id: u32, state: bool)
 
 // Invest
 fn invest(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
 fn fiat_invest(id: u32, shares_amount: i128, user, oplend_holder, nonce: String, signature: BytesN<64>)
-fn gift_op_tokens(id: u32, shares_amount: i128, user)
-fn predeposit(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
-fn claim_op_tokens(id: u32, user)
-fn claim_op_tokens_batch(id: u32, users: Vec<Address>)
 fn get_amount_in(id: u32, shares_amount: i128) -> i128
 fn get_amount_out(id: u32, usdc_amount: i128) -> i128
 
@@ -348,11 +337,7 @@ fn operation_started(id) -> bool
 fn operation_canceled(id) -> bool
 fn usdc_withdrawn(id) -> bool
 fn usdc_withdrawn_amount(id) -> i128
-fn predeposits_open(id) -> bool
 fn usdc_raised_per_client(id, user) -> i128
-fn predeposits(id, user) -> i128
-fn gifted(id, user) -> i128
-fn claimable_total(id, user) -> i128
 fn blacklisted(user) -> bool
 fn usdc() -> Address
 ```
@@ -447,14 +432,12 @@ cargo test -p lend_wallet      # the OpLendWallet suite
 
 Tests run against the Soroban test host (no network needed) and cover:
 
-- **Operation lifecycle** — create, start, pause/resume, pre-deposit toggling,
-  cancellation, finish detection.
-- **Investment flow** — `invest`, `fiat_invest`, gifting, share-cap enforcement,
+- **Operation lifecycle** — create, start, pause/resume, cancellation, finish
+  detection.
+- **Investment flow** — `invest`, `fiat_invest`, share-cap enforcement,
   blacklist/guard rejections.
 - **Backend signature verification** — valid signatures accepted, tampered
   signatures and replayed nonces rejected.
-- **Pre-deposit + claim** — committing before start, auto-start on fill,
-  claiming accumulated tokens (single + batch).
 - **Cancellation + refund** — single and batch refunds restore USDC and burn
   OpLend.
 - **Fund withdrawal** — only after finish, only once.

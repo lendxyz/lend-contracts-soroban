@@ -240,7 +240,7 @@ whitelist nonces are separate stores — so `NONCE` and `WL_NONCE` never collide
 ## `update-backend-signer.sh`
 
 Admin-only. Updates the factory's backend signer — the ed25519 key whose
-signatures `invest` / `predeposit` / `fiat_invest` verify against. Use this when
+signatures `invest` / `fiat_invest` verify against. Use this when
 the signer the API holds (`STELLAR_SIGNER_PRIVATE_KEY` in `lend-api`) differs
 from what the factory was deployed with (`ED25519 verification` failures).
 

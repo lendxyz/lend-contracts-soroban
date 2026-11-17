@@ -1,9 +1,7 @@
 use soroban_sdk::{Address, Env};
 
 use crate::storage as st;
-use crate::types::{
-    Operation, F_CANCELED, F_PAUSED, F_PREDEPOSITS, F_STARTED, F_WITHDRAWN,
-};
+use crate::types::{Operation, F_CANCELED, F_PAUSED, F_STARTED, F_WITHDRAWN};
 
 pub fn usdc(e: &Env) -> Address {
     st::read_usdc(e)
@@ -52,10 +50,6 @@ pub fn operation_canceled(e: &Env, id: u32) -> bool {
     st::read_op(e, id).flag(F_CANCELED)
 }
 
-pub fn predeposits_open(e: &Env, id: u32) -> bool {
-    st::read_op(e, id).flag(F_PREDEPOSITS)
-}
-
 pub fn is_operation_finished(e: &Env, id: u32) -> bool {
     st::read_op(e, id).finished()
 }
@@ -63,21 +57,6 @@ pub fn is_operation_finished(e: &Env, id: u32) -> bool {
 pub fn usdc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
     st::require_op_exists(e, id);
     st::read_position(e, id, &user).invested
-}
-
-pub fn predeposits(e: &Env, id: u32, user: Address) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_position(e, id, &user).predeposited
-}
-
-pub fn gifted(e: &Env, id: u32, user: Address) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_position(e, id, &user).gifted
-}
-
-pub fn claimable_total(e: &Env, id: u32, user: Address) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_position(e, id, &user).claimable()
 }
 
 pub fn blacklisted(e: &Env, user: Address) -> bool {

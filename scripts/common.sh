@@ -49,7 +49,7 @@ case "$NETWORK" in
     # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
     # EUR). Verified 2026-06-02 on-chain.
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
-    # Backend ed25519 key that authorizes invest / predeposit / fiat-invest.
+    # Backend ed25519 key that authorizes invest / fiat-invest.
     : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
     # Local CLI identity holding that key's *secret*. fiat-invest.sh signs the
     # FIAT_INVEST payload with it, so it must match BACKEND_SIGNER above.

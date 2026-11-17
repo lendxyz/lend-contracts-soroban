@@ -5,9 +5,7 @@ use soroban_sdk::{
 use crate::errors::Error;
 use crate::events;
 use crate::storage as st;
-use crate::types::{
-    DataKey, OpData, F_CANCELED, F_PAUSED, F_PREDEPOSITS, F_STARTED,
-};
+use crate::types::{DataKey, OpData, F_CANCELED, F_PAUSED, F_STARTED};
 use crate::utils::{op_symbol, prefixed};
 
 pub fn create_operation(
@@ -102,16 +100,5 @@ pub fn pause_funding(e: &Env, id: u32, state: bool) {
         events::OperationPaused { operation_id: id }.publish(e);
     } else {
         events::OperationResumed { operation_id: id }.publish(e);
-    }
-}
-
-pub fn set_predeposits(e: &Env, id: u32, state: bool) {
-    if !set_flag(e, id, F_PREDEPOSITS, state) {
-        return;
-    }
-    if state {
-        events::PredepositsOpen { operation_id: id }.publish(e);
-    } else {
-        events::PredepositsClosed { operation_id: id }.publish(e);
     }
 }

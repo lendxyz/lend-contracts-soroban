@@ -69,10 +69,6 @@ impl LendFactory {
         operations::pause_funding(&env, id, state);
     }
 
-    pub fn set_predeposits(env: Env, id: u32, state: bool) {
-        operations::set_predeposits(&env, id, state);
-    }
-
     // --- Invest ---
 
     pub fn invest(
@@ -104,34 +100,6 @@ impl LendFactory {
             nonce,
             signature,
         );
-    }
-
-    pub fn gift_op_tokens(
-        env: Env,
-        id: u32,
-        shares_amount: i128,
-        user: Address,
-    ) {
-        invest::gift_op_tokens(&env, id, shares_amount, user);
-    }
-
-    pub fn predeposit(
-        env: Env,
-        user: Address,
-        id: u32,
-        shares_amount: i128,
-        nonce: String,
-        signature: BytesN<64>,
-    ) {
-        invest::predeposit(&env, user, id, shares_amount, nonce, signature);
-    }
-
-    pub fn claim_op_tokens(env: Env, id: u32, user: Address) {
-        invest::claim_op_tokens(&env, id, user);
-    }
-
-    pub fn claim_op_tokens_batch(env: Env, id: u32, users: Vec<Address>) {
-        invest::claim_op_tokens_batch(&env, id, users);
     }
 
     pub fn void_nonce(env: Env, nonce: String, signature: Option<BytesN<64>>) {
@@ -268,22 +236,6 @@ impl LendFactory {
 
     pub fn usdc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
         getters::usdc_raised_per_client(&env, id, user)
-    }
-
-    pub fn predeposits(env: Env, id: u32, user: Address) -> i128 {
-        getters::predeposits(&env, id, user)
-    }
-
-    pub fn gifted(env: Env, id: u32, user: Address) -> i128 {
-        getters::gifted(&env, id, user)
-    }
-
-    pub fn claimable_total(env: Env, id: u32, user: Address) -> i128 {
-        getters::claimable_total(&env, id, user)
-    }
-
-    pub fn predeposits_open(env: Env, id: u32) -> bool {
-        getters::predeposits_open(&env, id)
     }
 
     pub fn blacklisted(env: Env, user: Address) -> bool {

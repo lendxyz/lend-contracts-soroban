@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Update the factory's backend signer (the ed25519 key that authorizes invest /
-# predeposit / fiat-invest messages). Admin-only (SOURCE must be the factory
-# admin).
+# fiat-invest messages). Admin-only (SOURCE must be the factory admin).
 #
 # Network, signer and FACTORY_ID come from scripts/common.sh; override in the env.
 #
