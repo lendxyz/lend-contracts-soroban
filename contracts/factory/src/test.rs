@@ -238,6 +238,35 @@ fn test_get_amount_in_out() {
     assert_eq!(s.factory.get_amount_out(&id, &1100), 100);
 }
 
+/// AUDIT Factory C13: an order that rounds to zero fails instead of being
+/// quoted (and sold) at 1 base unit.
+#[test]
+fn test_order_rounding_to_zero_fails() {
+    let s = setup();
+    // 1e-6 EUR per share: one share base unit costs less than 1e-7 USDC.
+    let name = String::from_str(&s.e, "Tiny");
+    let op_addr = s.factory.create_operation(&name, &1000, &1);
+    let id = s.factory.operation_count();
+    s.factory.start_operation(&id);
+    let too_small = Some(Ok(Error::AmountTooSmall.into()));
+
+    assert_eq!(s.factory.try_get_amount_in(&id, &1).err(), too_small);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "tiny");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 1, &nonce);
+    assert_eq!(
+        s.factory.try_invest(&user, &id, &1, &nonce, &sig).err(),
+        too_small
+    );
+    assert_eq!(oplend::Client::new(&s.e, &op_addr).balance(&user), 0);
+
+    // The other direction: 1 base unit of 7-decimal USDC buys no share unit.
+    let (normal, _) = create_op(&s, 1000);
+    assert_eq!(s.factory.try_get_amount_out(&normal, &1).err(), too_small);
+}
+
 /// AUDIT Factory C12: a missing cached scale (USDC or oracle decimals) fails
 /// the quote instead of silently pricing with a guessed 6 decimals.
 #[test]

@@ -197,3 +197,16 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `OperationResumed` for a change that never happened.
 - The check lives in the shared `set_flag`, which already detected the no-op
   but returned a `bool` every caller ignored.
+
+## Factory: `amount_in` / `amount_out` fail on a non-positive result
+
+> Addresses **Factory C13**
+
+- Both returned `1` when the computed amount was zero or negative, so an order
+  too small to cost one USDC base unit was sold for 1 base unit (and its
+  shares minted). They now fail with the new `AmountTooSmall` (31); this
+  covers `invest`, `fiat_invest`, `get_amount_in` and `get_amount_out`.
+- A non-positive share price or EUR/USD rate can no longer reach them
+  (`InvalidPrice` at `create_operation`, `OracleInvalidPrice` on the oracle
+  read), so in practice the result is only non-positive for an order that
+  rounds to zero.

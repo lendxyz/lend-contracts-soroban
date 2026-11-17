@@ -101,11 +101,12 @@ pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
     // hold, instead of rounding to 1e-6 first and multiplying the loss back up.
     let usdc_cost = shares_price_eur * get_eur_usd_price(e) * usdc_precision(e)
         / (PRICE_PRECISION * PRICE_PRECISION);
+    // A non-positive cost means the order rounds to nothing; minting shares
+    // for it would give them away.
     if usdc_cost <= 0 {
-        1
-    } else {
-        usdc_cost
+        panic_with_error!(e, Error::AmountTooSmall);
     }
+    usdc_cost
 }
 
 /// Shares obtainable for `usdc_amount` USDC base units at `eur_per_shares`.
@@ -121,8 +122,7 @@ pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
     let shares = usdc_6 * PRICE_PRECISION * PRICE_PRECISION
         / (eur_per_shares * get_eur_usd_price(e));
     if shares <= 0 {
-        1
-    } else {
-        shares
+        panic_with_error!(e, Error::AmountTooSmall);
     }
+    shares
 }

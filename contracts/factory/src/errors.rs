@@ -37,4 +37,5 @@ pub enum Error {
     RaiseOverflow = 28,
     ZeroAddressNotAllowed = 29,
     StateUnchanged = 30,
+    AmountTooSmall = 31,
 }
