@@ -11,6 +11,7 @@ pub enum Error {
     InvalidAmount = 4,
     NonceAlreadyUsed = 5,
     EmptyBatch = 6,
-    BatchTooLarge = 7,
+    // 7 (`BatchTooLarge`) retired with `MAX_BATCH`: an oversized batch already
+    // fails on the network's resource limits. Do not reuse the code.
     SelfTargetNotAllowed = 8,
 }

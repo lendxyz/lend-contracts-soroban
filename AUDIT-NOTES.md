@@ -358,3 +358,12 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   retired (code not reused).
 - `scripts/wallet-register-op-lend.sh` takes `OP_ID`, or `OP_IDS='[1,2]'` for
   a batch (was `OPLEND` / `ENTRIES`).
+
+## OpLendWallet: `MAX_BATCH` cap removed
+
+> Addresses **OpLendWallet C5**
+
+- `register_op_lends` no longer caps the batch at 200: an oversized batch
+  already fails on the network's resource limits (the event limit alone stops
+  it near 105 entries). `MAX_BATCH`, its check and error `BatchTooLarge` (7,
+  code not reused) are removed; an empty list is still refused (`EmptyBatch`).

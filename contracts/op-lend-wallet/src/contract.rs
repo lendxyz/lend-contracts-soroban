@@ -11,8 +11,6 @@ use crate::events;
 use crate::storage as st;
 use crate::types::{FactoryClient, OpLendClient};
 
-const MAX_BATCH: u32 = 200;
-
 /// Fails unless `factory` serves a backend signer, i.e. is a factory the
 /// wallet can read from (an account or an unrelated contract traps here).
 fn require_factory(e: &Env, factory: &Address) {
@@ -96,12 +94,8 @@ impl OpLendWallet {
         st::require_admin(&e);
         st::bump_instance(&e);
 
-        let len = op_ids.len();
-        if len == 0 {
+        if op_ids.is_empty() {
             panic_with_error!(&e, Error::EmptyBatch);
-        }
-        if len > MAX_BATCH {
-            panic_with_error!(&e, Error::BatchTooLarge);
         }
 
         let factory = FactoryClient::new(&e, &st::read_factory(&e));
