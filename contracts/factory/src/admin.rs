@@ -81,6 +81,52 @@ pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>) {
     st::write_op(e, id, &op);
 }
 
+/// Mirrors an off-chain euro refund: burns `shares_amount` of `user`'s
+/// fiat-bought shares from `oplend_holder` (where they are custodied, normally
+/// the op-lend wallet) and puts them back on sale. Capped at what `user`
+/// bought through `fiat_invest`, so it cannot unwind USDC purchases.
+pub fn fiat_refund(
+    e: &Env,
+    id: u32,
+    user: Address,
+    oplend_holder: Address,
+    shares_amount: i128,
+) {
+    st::require_admin(e);
+    st::bump_instance(e);
+    if shares_amount <= 0 {
+        panic_with_error!(e, Error::InvalidShares);
+    }
+
+    let mut op = st::read_op(e, id);
+    let mut pos = st::read_position(e, id, &user);
+    if shares_amount > pos.fiat_shares {
+        panic_with_error!(e, Error::InsufficientFiatShares);
+    }
+
+    pos.fiat_shares -= shares_amount;
+    st::write_position(e, id, &user, &pos);
+    op.funding_progress -= shares_amount;
+    st::write_op(e, id, &op);
+
+    OpLendClient::new(e, &op.op_token).burn(&oplend_holder, &shares_amount);
+
+    events::Refunded {
+        investor: user.clone(),
+        operation_id: id,
+        usdc_amount: 0,
+        shares_refunded: shares_amount,
+    }
+    .publish(e);
+    events::RefundedFiat {
+        investor: user,
+        oplend_holder,
+        operation_id: id,
+        shares_refunded: shares_amount,
+    }
+    .publish(e);
+}
+
 pub fn update_oracle_address(e: &Env, new_oracle: Address) {
     st::require_admin(e);
     st::bump_instance(e);

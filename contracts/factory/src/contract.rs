@@ -133,6 +133,16 @@ impl LendFactory {
         admin::batch_refund_users(&env, id, users);
     }
 
+    pub fn fiat_refund(
+        env: Env,
+        id: u32,
+        user: Address,
+        oplend_holder: Address,
+        shares_amount: i128,
+    ) {
+        admin::fiat_refund(&env, id, user, oplend_holder, shares_amount);
+    }
+
     pub fn update_oracle_address(env: Env, new_oracle: Address) {
         admin::update_oracle_address(&env, new_oracle);
     }
@@ -256,6 +266,10 @@ impl LendFactory {
 
     pub fn usdc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
         getters::usdc_raised_per_client(&env, id, user)
+    }
+
+    pub fn fiat_shares(env: Env, id: u32, user: Address) -> i128 {
+        getters::fiat_shares(&env, id, user)
     }
 
     pub fn blacklisted(env: Env, user: Address) -> bool {

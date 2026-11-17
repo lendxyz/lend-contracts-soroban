@@ -126,6 +126,10 @@ pub fn fiat_invest(
     op.funding_progress += shares_amount;
     st::write_op(e, id, &op);
 
+    let mut pos = st::read_position(e, id, &user);
+    pos.fiat_shares += shares_amount;
+    st::write_position(e, id, &user, &pos);
+
     let oplend = OpLendClient::new(e, &op.op_token);
     oplend.mint(&oplend_holder, &shares_amount);
     oplend.whitelist_user_admin(&user, &true);

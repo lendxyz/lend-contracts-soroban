@@ -71,6 +71,19 @@ pub struct Refunded {
     pub shares_refunded: i128,
 }
 
+/// Emitted with `Refunded` (which carries `usdc_amount: 0`) when a euro
+/// purchase is refunded off-chain and mirrored with `fiat_refund`.
+#[contractevent]
+pub struct RefundedFiat {
+    #[topic]
+    pub investor: Address,
+    #[topic]
+    pub oplend_holder: Address,
+    #[topic]
+    pub operation_id: u32,
+    pub shares_refunded: i128,
+}
+
 #[contractevent]
 pub struct FundingWithdrawn {
     #[topic]

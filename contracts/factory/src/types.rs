@@ -89,10 +89,16 @@ impl OpData {
 pub struct Position {
     /// USDC paid in by this user.
     pub invested: i128,
+    /// Shares bought with euros through `fiat_invest` and not yet refunded
+    /// with `fiat_refund`: the cap on what `fiat_refund` may take back.
+    pub fiat_shares: i128,
 }
 
 impl Position {
-    pub const ZERO: Position = Position { invested: 0 };
+    pub const ZERO: Position = Position {
+        invested: 0,
+        fiat_shares: 0,
+    };
 }
 
 #[contracttype(export = false)]

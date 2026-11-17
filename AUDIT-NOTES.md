@@ -232,3 +232,18 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   return the exact USDC paid, and the quote getters keep answering.
   `predeposit` and `gift_op_tokens`, also named in the finding, were removed
   under Factory C3.
+
+## Factory: fiat refunds recorded on-chain
+
+> Addresses **Factory C5**
+
+- New admin-only `fiat_refund(id, user, oplend_holder, shares_amount)`: burns
+  `shares_amount` shares from `oplend_holder` (normally the op-lend wallet that
+  custodies euro buyers' shares) and lowers `funding_progress` by the same
+  amount, so the shares are back on sale (a finished operation reopens).
+- The factory now records each investor's euro-bought shares
+  (`Position.fiat_shares`, incremented by `fiat_invest`, readable with
+  `fiat_shares(id, user)`); `fiat_refund` cannot exceed it
+  (`InsufficientFiatShares`, 33), so it cannot unwind USDC purchases.
+- Emits `Refunded` with `usdc_amount: 0` plus a new `RefundedFiat`, mirroring
+  `Invested` + `InvestedFiat` on the way in.

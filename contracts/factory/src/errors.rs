@@ -39,4 +39,5 @@ pub enum Error {
     StateUnchanged = 30,
     AmountTooSmall = 31,
     UsdcOffPeg = 32,
+    InsufficientFiatShares = 33,
 }
