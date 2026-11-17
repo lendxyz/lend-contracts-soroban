@@ -38,4 +38,5 @@ pub enum Error {
     ZeroAddressNotAllowed = 29,
     StateUnchanged = 30,
     AmountTooSmall = 31,
+    UsdcOffPeg = 32,
 }

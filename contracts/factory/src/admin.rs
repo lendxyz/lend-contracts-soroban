@@ -2,7 +2,7 @@ use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::set_oracle;
+use crate::oracle::{set_oracle, set_usdc_oracle};
 use crate::storage as st;
 use crate::types::{DataKey, OpData, OpLendClient, F_STARTED, F_WITHDRAWN};
 
@@ -85,6 +85,12 @@ pub fn update_oracle_address(e: &Env, new_oracle: Address) {
     st::require_admin(e);
     st::bump_instance(e);
     set_oracle(e, &new_oracle);
+}
+
+pub fn update_usdc_oracle_address(e: &Env, new_oracle: Address) {
+    st::require_admin(e);
+    st::bump_instance(e);
+    set_usdc_oracle(e, &new_oracle);
 }
 
 pub fn update_backend_signer(e: &Env, new_signer: BytesN<32>) {

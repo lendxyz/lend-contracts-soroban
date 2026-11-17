@@ -23,6 +23,7 @@ impl LendFactory {
         admin: Address,
         usdc: Address,
         oracle: Address,
+        usdc_oracle: Address,
         backend_signer: BytesN<32>,
         oplend_wasm_hash: BytesN<32>,
         first_op_id: u32,
@@ -39,6 +40,7 @@ impl LendFactory {
         st::set_operation_count(&env, first_op_id - 1);
         st::set_usdc(&env, &usdc);
         oracle::set_oracle(&env, &oracle);
+        oracle::set_usdc_oracle(&env, &usdc_oracle);
         st::bump_instance(&env);
     }
 
@@ -133,6 +135,10 @@ impl LendFactory {
 
     pub fn update_oracle_address(env: Env, new_oracle: Address) {
         admin::update_oracle_address(&env, new_oracle);
+    }
+
+    pub fn update_usdc_oracle_address(env: Env, new_oracle: Address) {
+        admin::update_usdc_oracle_address(&env, new_oracle);
     }
 
     pub fn update_backend_signer(env: Env, new_signer: BytesN<32>) {

@@ -63,8 +63,10 @@ stand-in).
   shares to the **OpLendWallet**, which releases them to the investor's own
   wallet later, against a backend signature over an `OP_REDEEM` message.
 - Share pricing uses a **Reflector (SEP-40)** oracle adapter for the EUR/USD
-  rate. The interface is defined in [`oracle.rs`](contracts/factory/src/oracle.rs)
-  and exercised against a mock in tests.
+  rate, and a second Reflector feed for USDC/USD: USDC purchases are refused
+  while USDC trades outside [0.98, 1.02] USD. The interface is defined in
+  [`oracle.rs`](contracts/factory/src/oracle.rs) and exercised against mocks in
+  tests.
 
 ### Operation lifecycle
 
@@ -234,6 +236,13 @@ pub trait OracleInterface {
 single cross-contract call. Re-run `update_oracle_address` (the same address is
 fine) if a feed ever changes its decimals in place.
 
+Pricing treats 1 USDC as 1 USD. To keep that true, `invest` also reads `USDC`
+from a second feed (`usdc_oracle`, Reflector's CEX & DEX oracle; the forex
+feed has no USDC) through the same checks, and fails with `UsdcOffPeg` while
+it is outside [0.98, 1.02]. `fiat_invest` (settled in euros off-chain),
+refunds (which return the exact USDC paid) and the quote getters are not
+gated. Change the feed with `update_usdc_oracle_address`.
+
 ### Decimals
 
 Everything internal is 6-decimal: `eur_per_shares`, `total_shares`,
@@ -301,7 +310,7 @@ the generated `try_*` client methods.
 
 ```rust
 // Setup
-fn __constructor(admin, usdc, oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>, first_op_id: u32)  // runs at deploy; first op gets `first_op_id`
+fn __constructor(admin, usdc, oracle, usdc_oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>, first_op_id: u32)  // runs at deploy; first op gets `first_op_id`
 fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
 
 // Operations
@@ -321,6 +330,7 @@ fn refund_user(id: u32, user)
 fn batch_refund_users(id: u32, users: Vec<Address>)       // refunds every address in the list
 fn withdraw_usdc(id: u32, destination)
 fn update_oracle_address(new_oracle)
+fn update_usdc_oracle_address(new_oracle)                  // USDC/USD feed for the depeg check
 fn update_backend_signer(new_signer: BytesN<32>)
 fn blacklist(user, state: bool)
 fn oplend_whitelist_user(op_id: u32, user, state: bool)

@@ -210,3 +210,25 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   (`InvalidPrice` at `create_operation`, `OracleInvalidPrice` on the oracle
   read), so in practice the result is only non-positive for an order that
   rounds to zero.
+
+## Factory: USDC purchases refused while USDC is off its peg
+
+> Addresses **Factory C4**
+
+- The factory prices shares as if 1 USDC were 1 USD. It now stores a second
+  Reflector feed, `usdc_oracle`, and `invest` fails with the new `UsdcOffPeg`
+  (32) while USDC/USD is outside [0.98, 1.02] (bounds included as on-peg).
+- The feed is Reflector's CEX & DEX oracle, queried for `Other("USDC")`: the
+  forex feed used for EUR has no USDC price. Verified on-chain 2026-11-17:
+  14 decimals, base USD, ≈1.0007 on both networks (mainnet
+  `CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN`, testnet
+  `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63`).
+- The price goes through the same checks as the EUR rate (missing, non-positive
+  or older than 24 h fails) via a shared `read_price`.
+- New constructor argument `usdc_oracle` (after `oracle`) and admin setter
+  `update_usdc_oracle_address`. `scripts/deploy-factory.sh` passes
+  `USDC_ORACLE`, defaulted per network in `scripts/common.sh`.
+- Only `invest` is gated: `fiat_invest` is settled in euros off-chain, refunds
+  return the exact USDC paid, and the quote getters keep answering.
+  `predeposit` and `gift_op_tokens`, also named in the finding, were removed
+  under Factory C3.

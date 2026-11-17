@@ -10,6 +10,12 @@ use crate::types::DataKey;
 pub const PRICE_PRECISION: i128 = 1_000_000; // 1e6
 const MAX_PRICE_AGE: u64 = 86_400; // 24h in seconds
 
+/// USDC/USD band (6 decimals, inclusive) within which USDC purchases are
+/// accepted. Shares are priced as if 1 USDC were 1 USD, so outside it the
+/// factory would sell euro-priced shares for USDC worth less than it assumes.
+const USDC_PEG_MIN: i128 = 980_000; // 0.98
+const USDC_PEG_MAX: i128 = 1_020_000; // 1.02
+
 /// Reflector SEP-40 asset selector.
 #[contracttype(export = false)]
 #[derive(Clone)]
@@ -33,30 +39,80 @@ pub trait OracleInterface {
     fn decimals(env: Env) -> u32;
 }
 
-/// Stores the oracle address and caches its `decimals()`.
+/// Stores the EUR/USD oracle (Reflector forex feed) and caches its decimals.
 pub fn set_oracle(e: &Env, oracle: &Address) {
+    store_feed(e, oracle, &DataKey::Oracle, &DataKey::OracleDecimals);
+}
+
+/// Stores the USDC/USD oracle (Reflector CEX & DEX feed, which prices `USDC`
+/// in USD; the forex feed does not) and caches its decimals.
+pub fn set_usdc_oracle(e: &Env, oracle: &Address) {
+    store_feed(
+        e,
+        oracle,
+        &DataKey::UsdcOracle,
+        &DataKey::UsdcOracleDecimals,
+    );
+}
+
+fn store_feed(
+    e: &Env,
+    oracle: &Address,
+    key: &DataKey,
+    decimals_key: &DataKey,
+) {
     let decimals = OracleClient::new(e, oracle).decimals();
-    e.storage().instance().set(&DataKey::Oracle, oracle);
-    e.storage()
-        .instance()
-        .set(&DataKey::OracleDecimals, &decimals);
+    let instance = e.storage().instance();
+    instance.set(key, oracle);
+    instance.set(decimals_key, &decimals);
 }
 
 /// Reads the EUR/USD price from the Reflector oracle, scaled to 6 decimals.
 pub fn get_eur_usd_price(e: &Env) -> i128 {
+    read_price(
+        e,
+        &DataKey::Oracle,
+        &DataKey::OracleDecimals,
+        symbol_short!("EUR"),
+    )
+}
+
+/// Fails with `UsdcOffPeg` unless USDC trades within
+/// [`USDC_PEG_MIN`, `USDC_PEG_MAX`] USD on the USDC oracle.
+pub fn require_usdc_pegged(e: &Env) {
+    let price = read_price(
+        e,
+        &DataKey::UsdcOracle,
+        &DataKey::UsdcOracleDecimals,
+        symbol_short!("USDC"),
+    );
+    if !(USDC_PEG_MIN..=USDC_PEG_MAX).contains(&price) {
+        panic_with_error!(e, Error::UsdcOffPeg);
+    }
+}
+
+/// `symbol`'s USD price from the feed stored under `key` (decimals cached
+/// under `decimals_key`): rejects a missing, non-positive or stale price, and
+/// scales it to 6 decimals.
+fn read_price(
+    e: &Env,
+    key: &DataKey,
+    decimals_key: &DataKey,
+    symbol: Symbol,
+) -> i128 {
     let instance = e.storage().instance();
-    let oracle: Address = match instance.get(&DataKey::Oracle) {
+    let oracle: Address = match instance.get(key) {
         Some(oracle) => oracle,
         None => panic_with_error!(e, Error::NotInitialized),
     };
-    // Written with the oracle (constructor / `update_oracle_address`); never
+    // Written with the oracle (constructor / `update_*oracle_address`); never
     // guess a scale if it is missing.
-    let decimals: u32 = match instance.get(&DataKey::OracleDecimals) {
+    let decimals: u32 = match instance.get(decimals_key) {
         Some(decimals) => decimals,
         None => panic_with_error!(e, Error::NotInitialized),
     };
 
-    let asset = Asset::Other(symbol_short!("EUR"));
+    let asset = Asset::Other(symbol);
     let data = match OracleClient::new(e, &oracle).lastprice(&asset) {
         Some(data) => data,
         None => panic_with_error!(e, Error::OracleNoPrice),

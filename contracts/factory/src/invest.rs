@@ -6,7 +6,7 @@ use crate::crypto::{
 };
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::{amount_in, amount_out};
+use crate::oracle::{amount_in, amount_out, require_usdc_pegged};
 use crate::storage as st;
 use crate::types::{OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED};
 
@@ -62,6 +62,8 @@ pub fn invest(
 
     let mut op = load_started(e, id);
     check_fundable(e, &op, shares_amount);
+    // Shares are priced as if 1 USDC were 1 USD; refuse USDC while it is not.
+    require_usdc_pegged(e);
 
     let cost = amount_in(e, op.eur_per_shares, shares_amount);
 

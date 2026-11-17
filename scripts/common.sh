@@ -53,6 +53,9 @@ case "$NETWORK" in
     # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
     # EUR). Verified 2026-06-02 on-chain.
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
+    # Reflector CEX & DEX feed (base USD, 14 decimals): the one that prices
+    # USDC itself, for the factory's depeg check. Verified 2026-11-17 on-chain.
+    : "${USDC_ORACLE:=CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63}"
     # Backend ed25519 key that authorizes invest / fiat-invest.
     : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
     # Local CLI identity holding that key's *secret*. fiat-invest.sh signs the
@@ -104,6 +107,8 @@ case "$NETWORK" in
     # Circle USDC SAC + Reflector FX oracle. Verified on 10th Aug. 2026.
     : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
+    # Reflector CEX & DEX feed, prices USDC in USD. Verified 2026-11-17.
+    : "${USDC_ORACLE:=CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN}"
     : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
     : "${BACKEND_SIGNER_KEY:=lend-mainnet-signer}"
     : "${FIAT_HOLDER:=CACWIITWTXV47Z5EGVCE73HO5JEZENPZZFKQYPCZDWLNB5TF6RJ44CBI}"

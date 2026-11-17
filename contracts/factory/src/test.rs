@@ -3,7 +3,7 @@ extern crate std;
 
 use ed25519_dalek::{Signer, SigningKey};
 use soroban_sdk::{
-    contract, contractimpl,
+    contract, contractimpl, symbol_short,
     testutils::{Address as _, Deployer as _, Events as _, Ledger as _},
     token::StellarAssetClient,
     Address, Bytes, BytesN, Env, Event as _, String,
@@ -38,6 +38,35 @@ impl MockOracle {
     }
 }
 
+/// Mock Reflector CEX & DEX feed for USDC/USD, 14 decimals. Starts at par;
+/// `set_price` simulates a depeg. Answers only for the `USDC` symbol, so a
+/// factory asking for anything else gets no price.
+#[contract]
+pub struct MockUsdcOracle;
+
+#[contractimpl]
+impl MockUsdcOracle {
+    pub fn set_price(e: Env, price: i128) {
+        e.storage().instance().set(&symbol_short!("price"), &price);
+    }
+    pub fn lastprice(e: Env, asset: Asset) -> Option<PriceData> {
+        match asset {
+            Asset::Other(s) if s == symbol_short!("USDC") => Some(PriceData {
+                price: e
+                    .storage()
+                    .instance()
+                    .get(&symbol_short!("price"))
+                    .unwrap_or(100_000_000_000_000), // 1.0 * 1e14
+                timestamp: e.ledger().timestamp(),
+            }),
+            _ => None,
+        }
+    }
+    pub fn decimals(_e: Env) -> u32 {
+        14
+    }
+}
+
 /// A USDC whose scale differs from the 7-decimal SAC the rest of the tests use.
 /// The value here MUST stay 6: the point is the contrast, so that a hardcoded
 /// scale anywhere in the pricing path shows up as a failure. Only `decimals()`
@@ -64,6 +93,7 @@ struct Setup<'a> {
     factory_id: Address,
     usdc: StellarAssetClient<'a>,
     usdc_addr: Address,
+    usdc_oracle: MockUsdcOracleClient<'a>,
 }
 
 fn setup<'a>() -> Setup<'a> {
@@ -84,11 +114,12 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
 
     let oracle_addr = e.register(MockOracle, ());
 
-    let factory_id =
+    let (factory_id, usdc_oracle) =
         register_factory(&e, &admin, &usdc_addr, &oracle_addr, first_op_id);
     let factory = LendFactoryClient::new(&e, &factory_id);
 
     Setup {
+        usdc_oracle: MockUsdcOracleClient::new(&e, &usdc_oracle),
         e,
         factory,
         factory_id,
@@ -97,28 +128,32 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
     }
 }
 
-/// Deploys a factory, running its `__constructor`.
+/// Deploys a factory, running its `__constructor`, with a fresh at-par
+/// USDC/USD mock. Returns (factory, USDC oracle).
 fn register_factory(
     e: &Env,
     admin: &Address,
     usdc: &Address,
     oracle: &Address,
     first_op_id: u32,
-) -> Address {
+) -> (Address, Address) {
     let signer =
         BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
     let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
-    e.register(
+    let usdc_oracle = e.register(MockUsdcOracle, ());
+    let factory = e.register(
         LendFactory,
         (
             admin.clone(),
             usdc.clone(),
             oracle.clone(),
+            usdc_oracle.clone(),
             signer,
             wasm_hash,
             first_op_id,
         ),
-    )
+    );
+    (factory, usdc_oracle)
 }
 
 /// Independent reconstruction of the `ONCHAIN_INVEST` payload. Keep it naive
@@ -307,7 +342,7 @@ fn test_upgrade_replaces_the_executable() {
 /// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
 fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
     let oracle = e.register(MockOracle, ());
-    let factory_id =
+    let (factory_id, _) =
         register_factory(e, &Address::generate(e), usdc, &oracle, 1);
     LendFactoryClient::new(e, &factory_id)
 }
@@ -991,4 +1026,56 @@ fn test_fiat_invest_before_start_fails() {
     s.factory
         .fiat_invest(&id, &40, &user, &holder, &nonce, &sig);
     assert_eq!(s.factory.funding_progress(&id), 40);
+}
+
+/// AUDIT Factory C4: USDC purchases are refused while USDC trades outside
+/// [0.98, 1.02] USD (bounds included as on-peg). Fiat investments, settled in
+/// euros off-chain, are not affected.
+#[test]
+fn test_invest_refused_while_usdc_off_peg() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    let try_buy = |nonce: &str| {
+        let nonce = String::from_str(&s.e, nonce);
+        let sig = sign_invest(&s.e, &s.factory_id, id, &user, 10, &nonce);
+        s.factory.try_invest(&user, &id, &10, &nonce, &sig).err()
+    };
+
+    // 14-decimal prices: 0.88 (March 2023), just under 0.98, just over 1.02.
+    for (i, price) in [
+        88_000_000_000_000_i128,
+        97_999_900_000_000,
+        102_000_100_000_000,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        s.usdc_oracle.set_price(&price);
+        assert_eq!(
+            try_buy(&std::format!("off-{i}")),
+            Some(Ok(Error::UsdcOffPeg.into()))
+        );
+    }
+    assert_eq!(s.factory.funding_progress(&id), 0);
+
+    // Fiat still goes through during the depeg.
+    let holder = Address::generate(&s.e);
+    let nonce = String::from_str(&s.e, "fiat");
+    let sig =
+        sign_fiat_invest(&s.e, &s.factory_id, id, &user, &holder, 40, &nonce);
+    s.factory
+        .fiat_invest(&id, &40, &user, &holder, &nonce, &sig);
+
+    // The band edges are on-peg.
+    for (i, price) in [98_000_000_000_000_i128, 102_000_000_000_000]
+        .into_iter()
+        .enumerate()
+    {
+        s.usdc_oracle.set_price(&price);
+        assert_eq!(try_buy(&std::format!("edge-{i}")), None);
+    }
+    assert_eq!(s.factory.funding_progress(&id), 60);
 }

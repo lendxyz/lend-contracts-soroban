@@ -114,4 +114,7 @@ pub enum DataKey {
     /// because adding a field there would make every already-stored `Op`
     /// entry undecodable. New variants MUST be appended, never reordered.
     UsdcWithdrawn(u32),
+    /// USDC/USD oracle for the depeg check, and its cached decimals.
+    UsdcOracle,
+    UsdcOracleDecimals,
 }

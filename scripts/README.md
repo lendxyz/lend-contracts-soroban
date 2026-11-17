@@ -380,17 +380,23 @@ on testnet; set it to override.
 
 ## Network addresses
 
-`deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE`.
+`deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE` /
+`USDC_ORACLE`.
 Verified 2026-06-02 (on-chain + Circle/Stellar docs).
 
 | Asset | testnet | mainnet |
 |---|---|---|
 | **USDC** (SAC) | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` |
 | **Reflector FX oracle** | `CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W` | `CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC` |
+| **Reflector CEX & DEX oracle** (USDC/USD) | `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63` | `CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN` |
 
 - **Reflector FX oracle** = the fiat/forex feed (one of Reflector's three
   oracles). Base asset `USD`, `decimals() = 14`, quotes EUR via
   `lastprice(Asset::Other("EUR"))`. Returned ≈1.1646 USD/EUR on both networks.
+- **Reflector CEX & DEX oracle** = the crypto feed. Base `USD`,
+  `decimals() = 14`, quotes USDC via `lastprice(Asset::Other("USDC"))` (≈1.0007
+  on both networks, 2026-11-17). The FX feed has no USDC price. The factory uses
+  it only to refuse USDC purchases outside [0.98, 1.02] USD.
 - **USDC issuers**: mainnet `GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN`,
   testnet `GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5` (per Circle).
   SAC IDs are deterministic — re-derive if your test setup uses a different
