@@ -129,3 +129,13 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `upgrade` (which did not bump at all).
 - Regression tests in all four crates check that after an upgrade the code's
   TTL matches the instance's; they fail with the old order.
+
+## Factory: `create_operation` validates the price and total raise
+
+> Addresses **Factory C16**
+
+- A zero or negative `eur_per_shares` is rejected with `InvalidPrice` (27).
+- `total_shares * eur_per_shares` is checked with `checked_mul`; if it does not
+  fit in an `i128`, creation fails with `RaiseOverflow` (28). Before, the
+  operation was created and the overflow surfaced only when its last share
+  sold (computing `amount_raised_euro`), so it could never finish.

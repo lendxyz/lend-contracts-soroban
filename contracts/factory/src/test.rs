@@ -194,6 +194,39 @@ fn test_first_op_id_zero_is_rejected() {
     register_factory(&e, &Address::generate(&e), &usdc, &oracle, 0);
 }
 
+/// AUDIT Factory C16: a zero or negative price would make shares free (or pay
+/// the buyer), so `create_operation` rejects it.
+#[test]
+fn test_create_operation_rejects_non_positive_price() {
+    let s = setup();
+    let name = String::from_str(&s.e, "Alpha");
+    for price in [0, -1] {
+        assert_eq!(
+            s.factory.try_create_operation(&name, &1000, &price).err(),
+            Some(Ok(Error::InvalidPrice.into()))
+        );
+    }
+    assert_eq!(s.factory.operation_count(), 0);
+}
+
+/// AUDIT Factory C16: if `total_shares * eur_per_shares` overflows, the last
+/// share sold would panic computing the operation's EUR value, so the
+/// operation could never finish. Rejected up front instead.
+#[test]
+fn test_create_operation_rejects_overflowing_raise() {
+    let s = setup();
+    let name = String::from_str(&s.e, "Alpha");
+    let shares = i128::MAX / 2 + 1;
+
+    assert_eq!(
+        s.factory.try_create_operation(&name, &shares, &2).err(),
+        Some(Ok(Error::RaiseOverflow.into()))
+    );
+    // The largest product that still fits is accepted.
+    s.factory.create_operation(&name, &(i128::MAX / 2), &2);
+    assert_eq!(s.factory.operation_count(), 1);
+}
+
 #[test]
 fn test_get_amount_in_out() {
     let s = setup();

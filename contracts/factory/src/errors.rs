@@ -32,4 +32,6 @@ pub enum Error {
     OracleStalePrice = 24,
     InsufficientEscrow = 25,
     InvalidOperationId = 26,
+    InvalidPrice = 27,
+    RaiseOverflow = 28,
 }

@@ -20,6 +20,15 @@ pub fn create_operation(
     if total_shares <= 0 {
         panic_with_error!(e, Error::InvalidShares);
     }
+    if eur_per_shares <= 0 {
+        panic_with_error!(e, Error::InvalidPrice);
+    }
+    // The operation's EUR value (`OpData::raised_euro`) is computed from this
+    // product when the last share sells; if it overflowed there, the
+    // operation could never finish.
+    if total_shares.checked_mul(eur_per_shares).is_none() {
+        panic_with_error!(e, Error::RaiseOverflow);
+    }
 
     let id = st::operation_count(e) + 1;
 
