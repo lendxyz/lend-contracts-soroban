@@ -127,13 +127,8 @@ impl LendFactory {
         admin::refund_user(&env, id, user);
     }
 
-    pub fn batch_refund_users(
-        env: Env,
-        id: u32,
-        users: Vec<Address>,
-        len: u32,
-    ) {
-        admin::batch_refund_users(&env, id, users, len);
+    pub fn batch_refund_users(env: Env, id: u32, users: Vec<Address>) {
+        admin::batch_refund_users(&env, id, users);
     }
 
     pub fn update_oracle_address(env: Env, new_oracle: Address) {

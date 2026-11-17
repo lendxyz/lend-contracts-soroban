@@ -46,8 +46,8 @@ pub fn usdc_withdrawn(e: &Env, id: u32) -> bool {
 }
 
 pub fn usdc_withdrawn_amount(e: &Env, id: u32) -> i128 {
-    let op = st::read_op(e, id);
-    st::read_usdc_withdrawn(e, id, &op)
+    st::require_op_exists(e, id);
+    st::read_usdc_withdrawn(e, id)
 }
 
 pub fn operation_canceled(e: &Env, id: u32) -> bool {

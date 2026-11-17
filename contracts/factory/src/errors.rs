@@ -20,7 +20,8 @@ pub enum Error {
     Blacklisted = 13,
     NonceAlreadyUsed = 14,
     // 15 (`BatchTooLarge`) retired with `claim_op_tokens_batch`. Do not reuse.
-    InvalidBatchLen = 16,
+    // 16 (`InvalidBatchLen`) retired with `batch_refund_users`' `len`
+    // argument. Do not reuse the code.
     // 17 (`OperationNotFinished`) retired: withdrawals no longer wait for the
     // end of the sale. Do not reuse the code.
     NothingToWithdraw = 18,

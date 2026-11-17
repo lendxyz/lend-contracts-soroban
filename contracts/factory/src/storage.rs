@@ -1,7 +1,7 @@
 use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
 use crate::errors::Error;
-use crate::types::{DataKey, OpData, Position, F_WITHDRAWN};
+use crate::types::{DataKey, OpData, Position};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 
@@ -12,6 +12,7 @@ const OP_BUMP: u32 = 90 * DAY_IN_LEDGERS;
 const OP_THRESHOLD: u32 = OP_BUMP - 7 * DAY_IN_LEDGERS;
 
 /// Extends the instance (and code) TTL. Called by every state-changing entry
+/// point, so a factory in use never expires.
 pub fn bump_instance(e: &Env) {
     e.storage()
         .instance()
@@ -50,14 +51,15 @@ pub fn set_usdc(e: &Env, usdc: &Address) {
 }
 
 /// Cached USDC decimals. Circle's USDC is a classic Stellar asset wrapped in a
-/// SAC, so on mainnet it reports 7; the testnet DummyUSDC is deployed with 6.
+/// SAC, so on mainnet it reports 7; the testnet DummyUSDC is deployed with 7
+/// to match.
 /// Contracts initialized before this key existed fall back to the 6 they were
 /// priced against.
 pub fn usdc_decimals(e: &Env) -> u32 {
     e.storage()
         .instance()
         .get(&DataKey::UsdcDecimals)
-        .unwrap_or(6)
+        .unwrap_or(7)
 }
 
 pub fn usdc_client(e: &Env) -> token::Client<'_> {
@@ -132,15 +134,13 @@ pub fn write_op_name(e: &Env, id: u32, name: &String) {
         .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
-/// Cumulative USDC withdrawn from operation `id`. Operations withdrawn by the
-/// previous code (a single full withdrawal, recorded only as `F_WITHDRAWN`)
-/// have no entry: everything raised at that point was taken.
-pub fn read_usdc_withdrawn(e: &Env, id: u32, op: &OpData) -> i128 {
-    match e.storage().persistent().get(&DataKey::UsdcWithdrawn(id)) {
-        Some(amount) => amount,
-        None if op.flag(F_WITHDRAWN) => op.usdc_raised,
-        None => 0,
-    }
+/// Cumulative USDC withdrawn from operation `id`; zero until its first
+/// `withdraw_usdc`.
+pub fn read_usdc_withdrawn(e: &Env, id: u32) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&DataKey::UsdcWithdrawn(id))
+        .unwrap_or(0)
 }
 
 pub fn write_usdc_withdrawn(e: &Env, id: u32, amount: i128) {

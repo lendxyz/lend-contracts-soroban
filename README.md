@@ -226,7 +226,8 @@ pub trait OracleInterface {
 (> 24h old), and scales it to 6 decimals. Pricing math:
 
 - `amount_in(eur_per_shares, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
-- `amount_out(eur_per_shares, usdc)` → shares (`SHARE_PRECISION = 1e12`).
+- `amount_out(eur_per_shares, usdc)` → shares; the 12-decimal divisor (6-decimal
+  price × 6-decimal rate) is rescaled with `PRICE_PRECISION * PRICE_PRECISION`.
 
 `decimals()` is read once — in the constructor, and again on every
 `update_oracle_address` — and cached in instance storage, so pricing costs a
@@ -317,7 +318,7 @@ fn get_amount_out(id: u32, usdc_amount: i128) -> i128
 
 // Admin
 fn refund_user(id: u32, user)
-fn batch_refund_users(id: u32, users: Vec<Address>, len: u32)
+fn batch_refund_users(id: u32, users: Vec<Address>)       // refunds every address in the list
 fn withdraw_usdc(id: u32, destination)
 fn update_oracle_address(new_oracle)
 fn update_backend_signer(new_signer: BytesN<32>)

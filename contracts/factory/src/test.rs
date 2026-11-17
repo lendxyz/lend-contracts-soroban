@@ -742,34 +742,6 @@ fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
     assert_eq!(usdc_tok.balance(&s.factory_id), 1100); // operation b, intact
 }
 
-/// Operations withdrawn by the previously deployed code carry `F_WITHDRAWN`
-/// but no `UsdcWithdrawn` entry; they must read as fully withdrawn rather than
-/// letting the admin take the same USDC a second time.
-#[test]
-fn test_legacy_withdrawn_operation_counts_as_fully_withdrawn() {
-    use crate::types::{DataKey, OpData, F_WITHDRAWN};
-
-    let s = setup();
-    let (id, _) = create_op(&s, 1000);
-    s.factory.start_operation(&id);
-    let user = Address::generate(&s.e);
-    s.usdc.mint(&user, &10_000);
-    invest_as(&s, id, &user, 100, "n1");
-
-    s.e.as_contract(&s.factory_id, || {
-        let key = DataKey::Op(id);
-        let mut op: OpData = s.e.storage().persistent().get(&key).unwrap();
-        op.set_flag(F_WITHDRAWN, true);
-        s.e.storage().persistent().set(&key, &op);
-    });
-
-    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
-    assert_eq!(
-        s.factory.try_withdraw_usdc(&id, &Address::generate(&s.e)),
-        Err(Ok(Error::NothingToWithdraw.into()))
-    );
-}
-
 #[test]
 fn test_canceled_blocks_invest() {
     let s = setup();
@@ -819,7 +791,7 @@ fn test_batch_refund_accumulates_across_users() {
     assert_eq!(s.factory.usdc_raised(&id), 2211);
 
     let batch = soroban_sdk::vec![&s.e, users[0].clone(), users[1].clone()];
-    s.factory.batch_refund_users(&id, &batch, &2);
+    s.factory.batch_refund_users(&id, &batch);
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);

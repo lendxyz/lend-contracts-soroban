@@ -54,7 +54,7 @@ pub fn refund_user(e: &Env, id: u32, user: Address) {
 
     let mut op = st::read_op(e, id);
     let oplend = OpLendClient::new(e, &op.op_token);
-    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
+    let withdrawn = st::read_usdc_withdrawn(e, id);
     refund_one(
         e,
         id,
@@ -67,18 +67,15 @@ pub fn refund_user(e: &Env, id: u32, user: Address) {
     st::write_op(e, id, &op);
 }
 
-pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>, len: u32) {
+pub fn batch_refund_users(e: &Env, id: u32, users: Vec<Address>) {
     st::require_admin(e);
     st::bump_instance(e);
-    if len == 0 || len > users.len() {
-        panic_with_error!(e, Error::InvalidBatchLen);
-    }
 
     let mut op = st::read_op(e, id);
     let oplend = OpLendClient::new(e, &op.op_token);
     let usdc = st::usdc_client(e);
-    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
-    for user in users.iter().take(len as usize) {
+    let withdrawn = st::read_usdc_withdrawn(e, id);
+    for user in users.iter() {
         refund_one(e, id, &mut op, &oplend, &usdc, user, withdrawn);
     }
     st::write_op(e, id, &op);
@@ -187,7 +184,7 @@ pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     if !op.flag(F_STARTED) {
         panic_with_error!(e, Error::OperationNotStarted);
     }
-    let withdrawn = st::read_usdc_withdrawn(e, id, &op);
+    let withdrawn = st::read_usdc_withdrawn(e, id);
     let amount = op.usdc_raised - withdrawn;
     if amount <= 0 {
         panic_with_error!(e, Error::NothingToWithdraw);

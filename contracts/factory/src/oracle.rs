@@ -8,7 +8,6 @@ use crate::storage as st;
 use crate::types::DataKey;
 
 pub const PRICE_PRECISION: i128 = 1_000_000; // 1e6
-pub const SHARE_PRECISION: i128 = 1_000_000_000_000; // 1e12
 const MAX_PRICE_AGE: u64 = 86_400; // 24h in seconds
 
 /// Reflector SEP-40 asset selector.
@@ -85,8 +84,8 @@ fn usdc_precision(e: &Env) -> i128 {
     10i128.pow(st::usdc_decimals(e))
 }
 
-/// USDC cost for `shares_amount` shares of operation priced at `eur_per_shares`,
-/// in USDC base units.
+/// USDC cost for `shares_amount` shares of an operation priced at
+/// `eur_per_shares`, in USDC base units.
 pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
     if shares_amount <= 0 {
         panic_with_error!(e, Error::InvalidShares);
@@ -111,8 +110,11 @@ pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
     }
     // Token base units -> 6-decimal USDC, before the 6-decimal share math.
     let usdc_6 = usdc_amount * PRICE_PRECISION / usdc_precision(e);
-    let shares =
-        usdc_6 * SHARE_PRECISION / (eur_per_shares * get_eur_usd_price(e));
+    // 6-decimal USDC over a 12-decimal divisor (6-decimal EUR/share × 6-decimal
+    // USD/EUR): two PRICE_PRECISION factors bring the quotient back to
+    // 6-decimal shares.
+    let shares = usdc_6 * PRICE_PRECISION * PRICE_PRECISION
+        / (eur_per_shares * get_eur_usd_price(e));
     if shares <= 0 {
         1
     } else {

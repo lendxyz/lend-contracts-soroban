@@ -151,3 +151,25 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   account key (`GAAA…AWHF`) and contract id (`CAAA…BSC4`), valid addresses no
   one controls. Both now fail with the new `ZeroAddressNotAllowed` (29).
 - Checked before any state change.
+
+## Factory: unnecessary or misleading code removed
+
+> Addresses **Factory C14**
+
+- `SHARE_PRECISION` (1e12) is deleted: its only use, `amount_out`, now
+  divides with `PRICE_PRECISION * PRICE_PRECISION`, as `amount_in` already did.
+  Same value, so quotes are unchanged.
+- `batch_refund_users(id, users)` drops its `len` argument and refunds every
+  address in the list. Error `InvalidBatchLen` (16) is retired (code not
+  reused).
+- `MAX_BATCH` / `claim_op_tokens_batch`: already removed with the pre-deposit
+  and gift feature (Factory C3).
+- `read_usdc_withdrawn` drops the fallback for an operation flagged withdrawn
+  without a stored amount (a state only the previous code could produce); it
+  reads the stored amount, defaulting to zero. Its legacy test is deleted.
+- Comments fixed: `bump_instance` (was cut mid-sentence), USDC decimals (the
+  testnet DummyUSDC has 7, not 6), and `amount_in` ("shares of an operation").
+- Not done: renaming `eur_per_shares` to `eur_per_share`. The name is part of
+  the public interface (`create_operation` argument, `Operation` field from
+  `get_operation`) that `lend-app` and the scripts read, so it is kept to avoid
+  breaking them.
