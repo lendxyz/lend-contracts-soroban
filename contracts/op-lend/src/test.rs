@@ -130,6 +130,40 @@ fn test_transfer_requires_whitelist() {
     assert_eq!(token.balance(&user2), 600);
 }
 
+/// AUDIT OpLend T1: `whitelist_user_admin(user, false)` revokes a holder's right
+/// to move shares without touching his balance; a later mint restores it.
+#[test]
+fn test_whitelist_user_admin_revokes_and_mint_restores() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let admin = Address::generate(&e);
+    let user = Address::generate(&e);
+    let other = Address::generate(&e);
+    let token = create_token(&e, &admin);
+
+    token.mint(&user, &1000);
+    token.whitelist_user_admin(&other, &true);
+    assert!(token.is_whitelisted(&user));
+
+    token.whitelist_user_admin(&user, &false);
+    assert!(!token.is_whitelisted(&user));
+    assert_eq!(token.balance(&user), 1000);
+    assert_eq!(
+        token.try_transfer(&user, &other, &100),
+        Err(Ok(Error::NotWhitelisted.into()))
+    );
+    assert_eq!(token.balance(&user), 1000);
+    assert_eq!(token.balance(&other), 0);
+
+    // Minting to him whitelists him again.
+    token.mint(&user, &1);
+    assert!(token.is_whitelisted(&user));
+    token.transfer(&user, &other, &100);
+    assert_eq!(token.balance(&user), 901);
+    assert_eq!(token.balance(&other), 100);
+}
+
 #[test]
 fn test_transfer_to_non_whitelisted_fails() {
     let e = Env::default();

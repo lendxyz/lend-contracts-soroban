@@ -328,3 +328,13 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   the token always reports 6, the unit the factory prices shares in, so there
   is no argument to get wrong. The factory stops passing it.
 - Error code 2 (`DecimalTooLarge`) is retired (not reused).
+
+## OpLend: un-whitelist path tested
+
+> Addresses **OpLend T1**
+
+- New `test_whitelist_user_admin_revokes_and_mint_restores`: mints to a
+  whitelisted user, revokes him with `whitelist_user_admin(user, false)`, then
+  checks `is_whitelisted` is false, his balance is unchanged, and his transfer
+  to a whitelisted user fails with `NotWhitelisted`; a later mint restores the
+  right and the transfer succeeds.
