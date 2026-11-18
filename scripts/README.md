@@ -46,6 +46,21 @@ OP_ID=0 \
 ./scripts/start-operation.sh
 ```
 
+## `set-eurc.sh`
+
+Admin-only, write-once. Sets the EURC token `invest_eur` accepts; the factory
+caches its decimals, so it can never be changed afterwards.
+
+```bash
+EURC=C... \           # optional, defaults to the network's EURC in common.sh
+DRY_RUN=1 \           # optional, simulate only (--send=no)
+./scripts/set-eurc.sh
+```
+
+Reads the current `eurc` first: exits 0 if it already matches, aborts if it is
+set to something else, and aborts with an upgrade hint if the factory wasm has
+no `eurc` getter yet.
+
 ## `withdraw-usdc.sh`
 
 Admin-only. Sends the USDC and EURC an operation raised since the previous
