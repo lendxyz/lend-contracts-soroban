@@ -42,6 +42,10 @@ pub fn read_factory(e: &Env) -> Address {
     }
 }
 
+pub fn has_factory(e: &Env) -> bool {
+    e.storage().instance().has(&DataKey::Factory)
+}
+
 pub fn write_factory(e: &Env, factory: &Address) {
     e.storage().instance().set(&DataKey::Factory, factory);
 }

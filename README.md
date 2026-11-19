@@ -170,15 +170,17 @@ the investor once they do have one.
   verified by the token itself) and then transfers, paying out to a wallet the
   token has never seen in a single transaction.
 - **Admin controls** — `admin_redeem` (same transfer, no signature: the escape
-  hatch), `set_admin`, `set_factory` (where the backend signer is read from),
-  and `upgrade(new_wasm_hash)`, which swaps the code in place — same contract
-  id, registry and used nonces survive.
+  hatch), `set_admin`, `set_factory` (one-shot migration, see below), and
+  `upgrade(new_wasm_hash)`, which swaps the code in place — same contract id,
+  registry and used nonces survive.
 
 Constructor parameters: `admin`, `factory`. The backend signer is read from
 `factory` on every redeem, never stored. One wallet serves every operation; it
-is the address `fiat_invest` is given as the `oplend_holder`. After upgrading
-a wallet from the stored-signer version, or after a factory redeploy, point it
-at the factory with `set_factory` (`scripts/wallet-set-factory.sh`).
+is the address `fiat_invest` is given as the `oplend_holder`. The factory is
+fixed once recorded. A wallet upgraded from the stored-signer version has none
+yet: point it at the factory once with `set_factory`
+(`scripts/wallet-set-factory.sh`); any later call fails with
+`FactoryAlreadySet`.
 
 ### LendRewards
 
@@ -422,7 +424,7 @@ fn admin_redeem(op_id: u32, destination, amount: i128)     // admin; no signatur
 
 // Admin
 fn set_admin(new_admin)                                    // admin
-fn set_factory(factory)                                    // admin; must answer backend_signer()
+fn set_factory(factory)                                    // admin; one-shot, only while no factory is set; must answer backend_signer()
 fn upgrade(new_wasm_hash: BytesN<32>)                      // admin; in place, state survives
 
 // Getters

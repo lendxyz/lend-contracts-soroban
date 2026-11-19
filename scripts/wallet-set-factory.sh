@@ -5,9 +5,10 @@
 #
 # The wallet reads the backend signer from that factory on every redeem. Run
 # this once after upgrading a wallet that predates it (it stored the signer
-# itself and has no factory yet, so redeems fail until this is done), and
-# whenever the factory is redeployed. The wallet only accepts an address that
-# answers `backend_signer()` (an account or unrelated contract is refused).
+# itself and has no factory yet, so redeems fail until this is done). It is
+# one-shot: once a factory is recorded the call fails with `FactoryAlreadySet`
+# (#9). The wallet only accepts an address that answers `backend_signer()` (an
+# account or unrelated contract is refused).
 #
 # Network, signer, OPLEND_WALLET_ID and FACTORY_ID come from scripts/common.sh;
 # override in the env.

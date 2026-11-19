@@ -14,4 +14,5 @@ pub enum Error {
     // 7 (`BatchTooLarge`) retired with `MAX_BATCH`: an oversized batch already
     // fails on the network's resource limits. Do not reuse the code.
     SelfTargetNotAllowed = 8,
+    FactoryAlreadySet = 9,
 }

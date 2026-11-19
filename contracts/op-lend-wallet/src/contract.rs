@@ -112,11 +112,15 @@ impl OpLendWallet {
         events::AdminUpdated { admin, new_admin }.publish(&e);
     }
 
-    /// Points the wallet at the factory whose `backend_signer` authorizes
-    /// redeems. Needed after upgrading a wallet deployed with a stored
-    /// signer, and whenever the factory is redeployed.
+    /// Points a wallet upgraded from the stored-signer version at the factory
+    /// whose `backend_signer` authorizes redeems. One-shot: once a factory is
+    /// recorded it is fixed, so this fails with `FactoryAlreadySet`. The
+    /// constructor records one, so a freshly deployed wallet never needs it.
     pub fn set_factory(e: Env, factory: Address) {
         st::require_admin(&e);
+        if st::has_factory(&e) {
+            panic_with_error!(&e, Error::FactoryAlreadySet);
+        }
         st::bump_instance(&e);
         require_factory(&e, &factory);
         st::write_factory(&e, &factory);

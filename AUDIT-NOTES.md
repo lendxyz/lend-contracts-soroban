@@ -419,3 +419,12 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   left free by `F_PREDEPOSITS`.
 - OpLendWallet is upgraded, not redeployed: its retired code 3
   (`NotAContract`) stays reserved.
+
+## OpLendWallet: `set_factory` is one-shot
+
+- `set_factory` only works while the wallet has no factory, i.e. once, right
+  after upgrading the deployed stored-signer wallet. Once a factory is
+  recorded (by that call, or by the constructor on a fresh deployment) it
+  fails with the new error `FactoryAlreadySet` (9), so the admin can no longer
+  repoint the source of the backend signer.
+- Following a later factory redeploy now takes a wallet upgrade.

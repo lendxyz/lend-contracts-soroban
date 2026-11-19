@@ -10,7 +10,7 @@ use soroban_sdk::{
 
 use crate::contract::{OpLendWallet, OpLendWalletClient};
 use crate::errors::Error;
-use crate::types::Operation;
+use crate::types::{DataKey, Operation};
 
 // Op-lend wasm, built by `stellar contract build` (see the Makefile). The
 // wallet's whole job is moving these tokens, and op-lend's whitelist rule is
@@ -131,6 +131,14 @@ fn setup<'a>() -> Setup<'a> {
         op_token,
         op_token_id,
     }
+}
+
+/// Puts the wallet in the state the deployed one is in right after its
+/// in-place upgrade: its old constructor stored a signer, not a factory.
+fn drop_factory(s: &Setup) {
+    s.e.as_contract(&s.wallet_id, || {
+        s.e.storage().instance().remove(&DataKey::Factory)
+    });
 }
 
 /// Independent reconstruction of the `OP_REDEEM` payload. Deliberately naive
@@ -520,23 +528,6 @@ fn test_register_op_lends_writes_every_entry() {
     assert!(s.wallet.try_register_op_lends(&vec![&s.e, 1, 99]).is_err());
 }
 
-/// Re-registering after `set_factory` picks up the new factory's record for
-/// that id.
-#[test]
-fn test_register_op_lend_follows_the_current_factory() {
-    let s = setup();
-    let new_factory_id =
-        s.e.register(MockFactory, (pubkey(&s.e, &signer_key()),));
-    let new_factory = MockFactoryClient::new(&s.e, &new_factory_id);
-    let replacement = Address::generate(&s.e);
-    new_factory.set_operation(&OP_ID, &replacement);
-
-    s.wallet.set_factory(&new_factory_id);
-    s.wallet.register_op_lend(&OP_ID);
-
-    assert_eq!(s.wallet.op_lend(&OP_ID), replacement);
-}
-
 #[test]
 fn test_op_lend_getters_fail_for_an_unregistered_operation() {
     let s = setup();
@@ -576,26 +567,40 @@ fn test_backend_signer_follows_the_factory() {
     assert_eq!(s.op_token.balance(&user), 250);
 }
 
-/// `set_factory` repoints the wallet (after an upgrade from a stored-signer
-/// version, or a factory redeploy). Admin-only, contract addresses only.
+/// `set_factory` migrates a wallet upgraded from the stored-signer version:
+/// it has no factory, so signer reads fail until the admin records one.
+/// Admin-only; accounts and contracts serving no backend signer are refused.
 #[test]
-fn test_set_factory_switches_the_signer_source() {
+fn test_set_factory_points_an_upgraded_wallet_at_the_factory() {
     let s = setup();
     let user = whitelisted_user(&s);
-    let new_factory =
-        s.e.register(MockFactory, (pubkey(&s.e, &rotated_key()),));
+    drop_factory(&s);
+    assert_eq!(
+        s.wallet.try_backend_signer(),
+        Err(Ok(Error::NotInitialized.into()))
+    );
 
-    // An account, or a contract that serves no backend signer, is refused.
+    let new_factory_id =
+        s.e.register(MockFactory, (pubkey(&s.e, &rotated_key()),));
+    let new_factory = MockFactoryClient::new(&s.e, &new_factory_id);
+    new_factory.set_operation(&OP_ID, &s.op_token_id);
+
     assert!(s
         .wallet
         .try_set_factory(&Address::from_str(&s.e, ACCOUNT_STRKEY))
         .is_err());
     assert!(s.wallet.try_set_factory(&s.op_token_id).is_err());
+    s.e.set_auths(&[]);
+    assert!(s.wallet.try_set_factory(&new_factory_id).is_err());
+    s.e.mock_all_auths();
 
-    s.wallet.set_factory(&new_factory);
-    assert_eq!(s.wallet.factory(), new_factory);
+    s.wallet.set_factory(&new_factory_id);
+    assert_eq!(s.wallet.factory(), new_factory_id);
     assert_eq!(s.wallet.backend_signer(), pubkey(&s.e, &rotated_key()));
 
+    // Registration and redeems now go through the recorded factory.
+    s.wallet.register_op_lend(&OP_ID);
+    assert_eq!(s.wallet.op_lend(&OP_ID), s.op_token_id);
     let n = nonce(&s.e, "new-factory");
     let sig = sign_redeem_with(
         &s.e,
@@ -608,10 +613,28 @@ fn test_set_factory_switches_the_signer_source() {
     );
     s.wallet.redeem(&OP_ID, &user, &250, &n, &sig);
     assert_eq!(s.op_token.balance(&user), 250);
+}
 
-    s.e.set_auths(&[]);
-    assert!(s.wallet.try_set_factory(&s.factory.address).is_err());
-    assert_eq!(s.wallet.factory(), new_factory);
+/// Once a factory is recorded, by the constructor or by the migration call,
+/// `set_factory` is closed for good.
+#[test]
+fn test_set_factory_is_refused_once_a_factory_is_set() {
+    let s = setup();
+    let other = s.e.register(MockFactory, (pubkey(&s.e, &rotated_key()),));
+
+    assert_eq!(
+        s.wallet.try_set_factory(&other),
+        Err(Ok(Error::FactoryAlreadySet.into()))
+    );
+    assert_eq!(s.wallet.factory(), s.factory.address);
+
+    drop_factory(&s);
+    s.wallet.set_factory(&other);
+    assert_eq!(
+        s.wallet.try_set_factory(&s.factory.address),
+        Err(Ok(Error::FactoryAlreadySet.into()))
+    );
+    assert_eq!(s.wallet.factory(), other);
 }
 
 #[test]
