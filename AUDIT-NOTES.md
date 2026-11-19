@@ -53,8 +53,8 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `predeposits_open`, `predeposits`, `gifted`, `claimable_total`.
 - Events: `Predeposit`, `Gifted`, `ClaimedOpToken`, `PredepositsOpen`,
   `PredepositsClosed`.
-- Errors retired (codes not reused): `OperationAlreadyStarted` (6),
-  `PredepositsClosed` (9), `BatchTooLarge` (15).
+- Errors removed: `OperationAlreadyStarted`, `PredepositsClosed`,
+  `BatchTooLarge`.
 - Storage: the `F_PREDEPOSITS` flag bit, and `Position.predeposited` /
   `Position.gifted` (`Position` now only holds `invested`). Fresh deployment,
   so no stored data needs migrating.
@@ -69,11 +69,10 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   backend_signer, oplend_wasm_hash, first_op_id)`, which runs inside the deploy
   transaction. There is no longer a window between deploy and setup in which
   anyone could call `initialize` first and take the admin role.
-- Error `AlreadyInitialized` (1) is retired (code not reused): a constructor
-  cannot run twice.
+- Error `AlreadyInitialized` is removed: a constructor cannot run twice.
 - New `first_op_id`: the first operation gets this id, so the redeployed
   factory continues the old one's numbering (op ids key the upgraded op-lend
-  wallet registry and rewards roots). `0` fails with `InvalidOperationId` (26).
+  wallet registry and rewards roots). `0` fails with `InvalidOperationId`.
 - `scripts/deploy-factory.sh` passes the setup as constructor args (requires
   `FIRST_OP_ID`), and its deterministic deploy salt now includes the factory
   wasm hash: the old salt derived the existing factory id on both networks, so
@@ -160,8 +159,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   divides with `PRICE_PRECISION * PRICE_PRECISION`, as `amount_in` already did.
   Same value, so quotes are unchanged.
 - `batch_refund_users(id, users)` drops its `len` argument and refunds every
-  address in the list. Error `InvalidBatchLen` (16) is retired (code not
-  reused).
+  address in the list. Error `InvalidBatchLen` is removed.
 - `MAX_BATCH` / `claim_op_tokens_batch`: already removed with the pre-deposit
   and gift feature (Factory C3).
 - `read_usdc_withdrawn` drops the fallback for an operation flagged withdrawn
@@ -266,8 +264,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   or both zero, are rejected.
 - `Position.invested` is no longer reduced: it stays the record of USDC paid
   in, which `usdc_to_refund` need not match.
-- Errors `NoParticipation` (19) and `NoOpLendBalance` (20) are retired (codes
-  not reused).
+- Errors `NoParticipation` and `NoOpLendBalance` are removed.
 
 ## Factory: missing tests added
 
@@ -327,7 +324,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 - The constructor no longer takes `decimal` (it accepted any value up to 6):
   the token always reports 6, the unit the factory prices shares in, so there
   is no argument to get wrong. The factory stops passing it.
-- Error code 2 (`DecimalTooLarge`) is retired (not reused).
+- Error `DecimalTooLarge` is removed.
 
 ## OpLend: un-whitelist path tested
 
@@ -401,3 +398,21 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   succeeds and pays its own amount (130 and 240 in total), all four are
   recorded as claimed, an operation-A proof is refused on operation B, and a
   repeated claim is refused.
+
+## Factory and OpLend: error codes renumbered
+
+- Both contracts are redeployed, so the codes of removed errors are no longer
+  reserved: each `Error` enum is renumbered from 1 with no gaps, in the same
+  order. Clients decoding `Error(Contract, #n)` from these contracts must use
+  the new codes.
+- Factory (old → new): `NotInitialized` 2 → 1, `OperationNotFound` 3 → 2,
+  `OperationFinished` 4 → 3, `OperationNotStarted` 5 → 4,
+  `OperationCanceled` 7 → 5, `OperationPaused` 8 → 6, `TooManyShares` 10 → 7,
+  `InvalidShares` 11 → 8, `InvalidAmount` 12 → 9, `Blacklisted` 13 → 10,
+  `NonceAlreadyUsed` 14 → 11, `NothingToWithdraw` 18 → 12, and every code
+  from `SelfTargetNotAllowed` (21) to `InsufficientShareBalance` (34) drops
+  by 8 (13 to 26).
+- OpLend: `NotInitialized` stays 1; every code from `NegativeAmount` (3) to
+  `NotAdmin` (10) drops by 1 (2 to 9).
+- OpLendWallet is upgraded, not redeployed: its retired code 3
+  (`NotAContract`) stays reserved.

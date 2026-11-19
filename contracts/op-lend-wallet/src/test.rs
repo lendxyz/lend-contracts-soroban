@@ -403,10 +403,10 @@ fn test_redeem_to_the_wallet_itself_fails() {
     );
 }
 
-/// op-lend refuses transfers to an address it has not whitelisted (`#7`,
+/// op-lend refuses transfers to an address it has not whitelisted (`#6`,
 /// `NotWhitelisted`), which is the entire reason `whitelist_and_redeem` exists.
 #[test]
-#[should_panic(expected = "Error(Contract, #7)")]
+#[should_panic(expected = "Error(Contract, #6)")]
 fn test_redeem_to_an_unknown_wallet_is_rejected_by_the_token() {
     let s = setup();
     let fresh = Address::generate(&s.e);

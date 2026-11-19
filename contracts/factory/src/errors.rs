@@ -4,41 +4,30 @@ use soroban_sdk::contracterror;
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
-    // 1 (`AlreadyInitialized`) retired: setup runs in `__constructor`, which
-    // can only run once. Do not reuse the code.
-    NotInitialized = 2,
-    OperationNotFound = 3,
-    OperationFinished = 4,
-    OperationNotStarted = 5,
-    // 6 (`OperationAlreadyStarted`) retired with predeposits. Do not reuse.
-    OperationCanceled = 7,
-    OperationPaused = 8,
-    // 9 (`PredepositsClosed`) retired with predeposits. Do not reuse.
-    TooManyShares = 10,
-    InvalidShares = 11,
-    InvalidAmount = 12,
-    Blacklisted = 13,
-    NonceAlreadyUsed = 14,
-    // 15 (`BatchTooLarge`) retired with `claim_op_tokens_batch`. Do not reuse.
-    // 16 (`InvalidBatchLen`) retired with `batch_refund_users`' `len`
-    // argument. Do not reuse the code.
-    // 17 (`OperationNotFinished`) retired: withdrawals no longer wait for the
-    // end of the sale. Do not reuse the code.
-    NothingToWithdraw = 18,
-    // 19 (`NoParticipation`) and 20 (`NoOpLendBalance`) retired: refunds take
-    // admin-decided amounts instead of deriving them. Do not reuse the codes.
-    SelfTargetNotAllowed = 21,
-    OracleNoPrice = 22,
-    OracleInvalidPrice = 23,
-    OracleStalePrice = 24,
-    InsufficientEscrow = 25,
-    InvalidOperationId = 26,
-    InvalidPrice = 27,
-    RaiseOverflow = 28,
-    ZeroAddressNotAllowed = 29,
-    StateUnchanged = 30,
-    AmountTooSmall = 31,
-    UsdcOffPeg = 32,
-    InsufficientFiatShares = 33,
-    InsufficientShareBalance = 34,
+    NotInitialized = 1,
+    OperationNotFound = 2,
+    OperationFinished = 3,
+    OperationNotStarted = 4,
+    OperationCanceled = 5,
+    OperationPaused = 6,
+    TooManyShares = 7,
+    InvalidShares = 8,
+    InvalidAmount = 9,
+    Blacklisted = 10,
+    NonceAlreadyUsed = 11,
+    NothingToWithdraw = 12,
+    SelfTargetNotAllowed = 13,
+    OracleNoPrice = 14,
+    OracleInvalidPrice = 15,
+    OracleStalePrice = 16,
+    InsufficientEscrow = 17,
+    InvalidOperationId = 18,
+    InvalidPrice = 19,
+    RaiseOverflow = 20,
+    ZeroAddressNotAllowed = 21,
+    StateUnchanged = 22,
+    AmountTooSmall = 23,
+    UsdcOffPeg = 24,
+    InsufficientFiatShares = 25,
+    InsufficientShareBalance = 26,
 }
