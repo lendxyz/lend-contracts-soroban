@@ -1,5 +1,5 @@
 use common::STRKEY_LEN;
-use soroban_sdk::{panic_with_error, Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{panic_with_error, Address, Bytes, Env, String};
 
 use crate::errors::Error;
 use crate::types::DataKey;
@@ -65,15 +65,6 @@ fn with_nonce(e: &Env, head: &[u8], nonce: &String) -> Bytes {
     let mut msg = Bytes::from_slice(e, head);
     msg.append(&Bytes::from(nonce));
     msg
-}
-
-pub fn verify_backend_sig(
-    e: &Env,
-    signer: &BytesN<32>,
-    msg: &Bytes,
-    sig: &BytesN<64>,
-) {
-    e.crypto().ed25519_verify(signer, msg, sig);
 }
 
 pub fn consume_nonce(e: &Env, nonce: &String) {

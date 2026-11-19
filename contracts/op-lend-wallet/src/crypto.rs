@@ -1,5 +1,5 @@
 use common::STRKEY_LEN;
-use soroban_sdk::{panic_with_error, Address, Bytes, BytesN, Env, String};
+use soroban_sdk::{panic_with_error, Address, Bytes, Env, String};
 
 use crate::errors::Error;
 use crate::types::DataKey;
@@ -45,17 +45,6 @@ pub fn build_redeem_message(
     let mut msg = Bytes::from_slice(e, &buf);
     msg.append(&Bytes::from(nonce));
     msg
-}
-
-/// Verifies an ed25519 backend signature over `msg`. Panics if it does not
-/// check out, which reverts the whole redeem — including the nonce spend.
-pub fn verify_backend_sig(
-    e: &Env,
-    signer: &BytesN<32>,
-    msg: &Bytes,
-    sig: &BytesN<64>,
-) {
-    e.crypto().ed25519_verify(signer, msg, sig);
 }
 
 /// Spends a redeem nonce, permanently. The key's presence is the whole value,

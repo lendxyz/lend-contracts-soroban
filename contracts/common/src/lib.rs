@@ -1,7 +1,7 @@
 //! Helpers shared by the lend contracts.
 #![no_std]
 
-use soroban_sdk::{Bytes, Env, String};
+use soroban_sdk::{Bytes, BytesN, Env, String};
 
 /// Length of an account (`G...`) or contract (`C...`) strkey.
 pub const STRKEY_LEN: usize = 56;
@@ -27,4 +27,16 @@ pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
     let mut msg = Bytes::from_slice(e, &buf);
     msg.append(&Bytes::from(nonce));
     msg
+}
+
+/// Verifies the backend signer's ed25519 signature over `msg`. Panics if it
+/// does not check out, which reverts the whole call, including any nonce
+/// spend.
+pub fn verify_backend_sig(
+    e: &Env,
+    signer: &BytesN<32>,
+    msg: &Bytes,
+    sig: &BytesN<64>,
+) {
+    e.crypto().ed25519_verify(signer, msg, sig);
 }

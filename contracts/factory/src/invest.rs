@@ -1,9 +1,8 @@
-use common::build_void_nonce_message;
+use common::{build_void_nonce_message, verify_backend_sig};
 use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
 
 use crate::crypto::{
     build_fiat_invest_message, build_invest_message, consume_nonce,
-    verify_backend_sig,
 };
 use crate::errors::Error;
 use crate::events;
