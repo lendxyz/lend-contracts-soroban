@@ -14,17 +14,6 @@ pub fn build_whitelist_message(
     msg
 }
 
-/// The message the backend signs to void a whitelist nonce before it is spent.
-/// The tag keeps it from ever verifying as a whitelist message (those start
-/// with a `C...` strkey), and the token address keeps it from voiding the same
-/// nonce on another contract.
-pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
-    let mut msg = Bytes::from_slice(e, b"VOID_NONCE");
-    msg.append(&Bytes::from(e.current_contract_address().to_string()));
-    msg.append(&Bytes::from(nonce.clone()));
-    msg
-}
-
 /// Verifies an ed25519 backend signature over `msg`. Panics if the signature is invalid.
 pub fn verify_backend_sig(
     e: &Env,

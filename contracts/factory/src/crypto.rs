@@ -1,9 +1,8 @@
+use common::STRKEY_LEN;
 use soroban_sdk::{panic_with_error, Address, Bytes, BytesN, Env, String};
 
 use crate::errors::Error;
 use crate::types::DataKey;
-
-const STRKEY_LEN: usize = 56;
 
 pub fn build_invest_message(
     e: &Env,
@@ -58,23 +57,6 @@ pub fn build_fiat_invest_message(
         .to_string()
         .copy_into_slice(&mut buf[HOLDER..AMOUNT]);
     buf[AMOUNT..].copy_from_slice(&amount.to_be_bytes());
-
-    with_nonce(e, &buf, nonce)
-}
-
-/// The message the backend signs to void `nonce` before it is spent. The tag
-/// keeps it from ever verifying as an invest message, and the factory address
-/// keeps it from voiding the same nonce on another contract.
-pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
-    const TAG: &[u8] = b"VOID_NONCE";
-    const FACTORY: usize = TAG.len();
-    const END: usize = FACTORY + STRKEY_LEN;
-
-    let mut buf = [0u8; END];
-    buf[..FACTORY].copy_from_slice(TAG);
-    e.current_contract_address()
-        .to_string()
-        .copy_into_slice(&mut buf[FACTORY..]);
 
     with_nonce(e, &buf, nonce)
 }

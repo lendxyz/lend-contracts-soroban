@@ -258,6 +258,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.0.0"
+dependencies = [
+ "soroban-sdk",
+]
+
+[[package]]
 name = "const-oid"
 version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -839,6 +846,7 @@ dependencies = [
 name = "lend-operation-token"
 version = "0.0.1"
 dependencies = [
+ "common",
  "ed25519-dalek",
  "soroban-sdk",
  "soroban-token-sdk",
@@ -848,6 +856,7 @@ dependencies = [
 name = "lend_factory"
 version = "0.0.0"
 dependencies = [
+ "common",
  "ed25519-dalek",
  "soroban-sdk",
 ]
@@ -856,6 +865,7 @@ dependencies = [
 name = "lend_rewards"
 version = "0.0.0"
 dependencies = [
+ "common",
  "soroban-sdk",
 ]
 
@@ -863,6 +873,7 @@ dependencies = [
 name = "lend_wallet"
 version = "0.0.0"
 dependencies = [
+ "common",
  "ed25519-dalek",
  "soroban-sdk",
 ]

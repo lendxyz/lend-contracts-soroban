@@ -1,6 +1,5 @@
+use common::STRKEY_LEN;
 use soroban_sdk::{Address, Bytes, BytesN, Env, Vec};
-
-const STRKEY_LEN: usize = 56;
 
 pub fn leaf(e: &Env, user: &Address, balance: i128) -> BytesN<32> {
     let mut buf = [0u8; STRKEY_LEN + 16];

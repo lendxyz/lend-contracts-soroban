@@ -1,9 +1,8 @@
+use common::STRKEY_LEN;
 use soroban_sdk::{panic_with_error, Address, Bytes, BytesN, Env, String};
 
 use crate::errors::Error;
 use crate::types::DataKey;
-
-const STRKEY_LEN: usize = 56;
 
 /// The canonical message the backend signs to authorize a redeem.
 ///
@@ -42,25 +41,6 @@ pub fn build_redeem_message(
         .to_string()
         .copy_into_slice(&mut buf[DEST..AMOUNT]);
     buf[AMOUNT..].copy_from_slice(&amount.to_be_bytes());
-
-    let mut msg = Bytes::from_slice(e, &buf);
-    msg.append(&Bytes::from(nonce));
-    msg
-}
-
-/// The message the backend signs to void a redeem nonce before it is spent.
-/// The tag keeps it from ever verifying as a redeem, and the wallet address
-/// keeps it from voiding the same nonce on another contract.
-pub fn build_void_nonce_message(e: &Env, nonce: &String) -> Bytes {
-    const TAG: &[u8] = b"VOID_NONCE";
-    const WALLET: usize = TAG.len();
-    const END: usize = WALLET + STRKEY_LEN;
-
-    let mut buf = [0u8; END];
-    buf[..WALLET].copy_from_slice(TAG);
-    e.current_contract_address()
-        .to_string()
-        .copy_into_slice(&mut buf[WALLET..]);
 
     let mut msg = Bytes::from_slice(e, &buf);
     msg.append(&Bytes::from(nonce));

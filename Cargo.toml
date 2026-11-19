@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "contracts/common",
     "contracts/dummy-usdc",
     "contracts/factory",
     "contracts/op-lend",
@@ -11,6 +12,7 @@ members = [
 [workspace.dependencies]
 soroban-sdk = "25"
 soroban-token-sdk = { version = "25.1.0" }
+common = { path = "contracts/common" }
 
 [profile.release]
 opt-level = "z"

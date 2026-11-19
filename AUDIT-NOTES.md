@@ -19,7 +19,8 @@ the backend signature carrying it can never be used.
 - `Some(sig)`: callable by anyone; `sig` must be the backend signer's ed25519
   signature over `"VOID_NONCE" || <contract strkey, 56 bytes> || nonce`. The
   original signature cannot be checked here: it also binds user / amount / op
-  id, which this call does not take.
+  id, which this call does not take. All three contracts build this message
+  with the shared `common::build_void_nonce_message`.
 - `None`: requires the contract admin's auth. op-lend's admin is the factory,
   so its admin path is `factory.oplend_void_nonce(op_id, nonce)`.
 - Fails with `NonceAlreadyUsed` if the nonce is already spent or voided.
@@ -36,7 +37,7 @@ the backend signature carrying it can never be used.
   `TokenInterface`) but are admin-only:
   - `burn(from, amount)` requires the admin's auth instead of `from`'s, and
     burns from any holder without an allowance.
-  - `burn_from(spender, from, amount)` panics with `NotAdmin` (new error 10)
+  - `burn_from(spender, from, amount)` panics with `NotAdmin` (new error 9)
     unless `spender` is the admin; it requires the admin's auth and spends the
     allowance as usual.
 - `admin_burn` is removed; `burn` replaces it. The factory's refunds and

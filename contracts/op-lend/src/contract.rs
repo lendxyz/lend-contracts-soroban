@@ -1,13 +1,12 @@
 use crate::account::{self, Wl};
 use crate::admin::{read_administrator, write_administrator};
 use crate::allowance::{read_allowance, spend_allowance, write_allowance};
-use crate::crypto::{
-    build_void_nonce_message, build_whitelist_message, verify_backend_sig,
-};
+use crate::crypto::{build_whitelist_message, verify_backend_sig};
 use crate::errors::Error;
 use crate::metadata::{read_decimal, read_name, read_symbol, write_metadata};
 use crate::storage_types::{AllowanceDataKey, AllowanceValue, DataKey};
 use crate::storage_types::{INSTANCE_BUMP_AMOUNT, INSTANCE_LIFETIME_THRESHOLD};
+use common::build_void_nonce_message;
 use soroban_sdk::{
     contract, contractclient, contractevent, contractimpl, panic_with_error,
     token::TokenInterface, Address, BytesN, Env, MuxedAddress, String,

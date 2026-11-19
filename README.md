@@ -527,6 +527,7 @@ contracts/
   op-lend-wallet/ OpLendWallet — custodial holder of op-lend shares (fiat investors)
   rewards/      LendRewards — merkle-based reward distribution
   dummy-usdc/   DummyUSDC   — testnet-only open-mint USDC stand-in
+  common/       shared helpers (not a contract) — `VOID_NONCE` message, STRKEY_LEN
 scripts/        deploy + interaction scripts (shared config: common.sh)
 Makefile        build / test / deploy targets
 DEPLOYMENTS.md  deployed contract addresses
