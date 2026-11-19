@@ -41,7 +41,7 @@ pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
 /// Set on the first `withdraw_usdc`; the amount lives under
 /// `DataKey::UsdcWithdrawn`.
-pub const F_WITHDRAWN: u32 = 1 << 4;
+pub const F_WITHDRAWN: u32 = 1 << 3;
 
 /// Everything a funding path needs, in a single ledger entry.
 ///

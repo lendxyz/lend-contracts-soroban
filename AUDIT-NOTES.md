@@ -399,7 +399,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   recorded as claimed, an operation-A proof is refused on operation B, and a
   repeated claim is refused.
 
-## Factory and OpLend: error codes renumbered
+## Factory and OpLend: error codes and flag bits renumbered
 
 - Both contracts are redeployed, so the codes of removed errors are no longer
   reserved: each `Error` enum is renumbered from 1 with no gaps, in the same
@@ -414,5 +414,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   by 8 (13 to 26).
 - OpLend: `NotInitialized` stays 1; every code from `NegativeAmount` (3) to
   `NotAdmin` (10) drops by 1 (2 to 9).
+- Factory `OpData::flags`: `F_WITHDRAWN` moves from bit 4 to bit 3, the bit
+  left free by `F_PREDEPOSITS`.
 - OpLendWallet is upgraded, not redeployed: its retired code 3
   (`NotAContract`) stays reserved.
