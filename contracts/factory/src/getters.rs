@@ -67,11 +67,6 @@ pub fn usdc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
     st::read_position(e, id, &user).invested
 }
 
-pub fn fiat_shares(e: &Env, id: u32, user: Address) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_position(e, id, &user).fiat_shares
-}
-
 pub fn blacklisted(e: &Env, user: Address) -> bool {
     st::is_blacklisted(e, &user)
 }

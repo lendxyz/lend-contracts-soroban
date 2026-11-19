@@ -275,10 +275,6 @@ impl LendFactory {
         getters::usdc_raised_per_client(&env, id, user)
     }
 
-    pub fn fiat_shares(env: Env, id: u32, user: Address) -> i128 {
-        getters::fiat_shares(&env, id, user)
-    }
-
     pub fn blacklisted(env: Env, user: Address) -> bool {
         getters::blacklisted(&env, user)
     }

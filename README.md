@@ -104,8 +104,8 @@ Responsibilities:
 - **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn an
   admin-chosen number of shares and repay an admin-chosen USDC amount from the
   operation's escrow (the two are not tied: shares move between holders);
-  `fiat_refund` mirrors an off-chain euro refund (burns the custodied shares,
-  puts them back on sale, capped at the investor's `fiat_shares`);
+  `fiat_refund` mirrors an off-chain euro refund (burns the custodied shares
+  from the holder and puts them back on sale, bounded by the holder's balance);
   `withdraw_usdc` releases the raised funds not yet withdrawn, any time after
   an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
@@ -300,7 +300,7 @@ touch a dozen entries.
 | --- | --- | --- |
 | `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / withdrawn bits in one `u32` | 8 separate per-operation keys |
 | `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
-| `Position(id, user)` | USDC paid in (not reduced by refunds), euro-bought shares still refundable | (per-(op, user) mapping) |
+| `Position(id, user)` | USDC paid in (a record, not reduced by refunds) | (per-(op, user) mapping) |
 | `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
 
 `Operation` — the struct returned by `operations` / `get_operation` — is
@@ -369,7 +369,6 @@ fn operation_canceled(id) -> bool
 fn usdc_withdrawn(id) -> bool
 fn usdc_withdrawn_amount(id) -> i128
 fn usdc_raised_per_client(id, user) -> i128
-fn fiat_shares(id, user) -> i128                           // euro-bought shares still refundable with fiat_refund
 fn blacklisted(user) -> bool
 fn usdc() -> Address
 fn oplend_wasm_hash() -> BytesN<32>                        // code new operations deploy from

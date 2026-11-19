@@ -105,10 +105,11 @@ pub fn batch_refund_users(e: &Env, id: u32, entries: Vec<RefundEntry>) {
     st::write_op(e, id, &op);
 }
 
-/// Mirrors an off-chain euro refund: burns `shares_amount` of `user`'s
-/// fiat-bought shares from `oplend_holder` (where they are custodied, normally
-/// the op-lend wallet) and puts them back on sale. Capped at what `user`
-/// bought through `fiat_invest`, so it cannot unwind USDC purchases.
+/// Mirrors an off-chain euro refund: burns `shares_amount` shares from
+/// `oplend_holder` (where euro buyers' shares are custodied, normally the
+/// op-lend wallet) and puts them back on sale. Like `refund_user`, it is
+/// bounded only by the holder's balance: the amount and the holder are the
+/// admin's call, and `user` only labels the events.
 pub fn fiat_refund(
     e: &Env,
     id: u32,
@@ -123,17 +124,15 @@ pub fn fiat_refund(
     }
 
     let mut op = st::read_op(e, id);
-    let mut pos = st::read_position(e, id, &user);
-    if shares_amount > pos.fiat_shares {
-        panic_with_error!(e, Error::InsufficientFiatShares);
+    let oplend = OpLendClient::new(e, &op.op_token);
+    if shares_amount > oplend.balance(&oplend_holder) {
+        panic_with_error!(e, Error::InsufficientShareBalance);
     }
 
-    pos.fiat_shares -= shares_amount;
-    st::write_position(e, id, &user, &pos);
     op.funding_progress -= shares_amount;
     st::write_op(e, id, &op);
 
-    OpLendClient::new(e, &op.op_token).burn(&oplend_holder, &shares_amount);
+    oplend.burn(&oplend_holder, &shares_amount);
 
     events::Refunded {
         investor: user.clone(),

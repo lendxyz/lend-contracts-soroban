@@ -134,9 +134,9 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
 > Addresses **Factory C16**
 
-- A zero or negative `eur_per_shares` is rejected with `InvalidPrice` (27).
+- A zero or negative `eur_per_shares` is rejected with `InvalidPrice` (19).
 - `total_shares * eur_per_shares` is checked with `checked_mul`; if it does not
-  fit in an `i128`, creation fails with `RaiseOverflow` (28). Before, the
+  fit in an `i128`, creation fails with `RaiseOverflow` (20). Before, the
   operation was created and the overflow surfaced only when its last share
   sold (computing `amount_raised_euro`), so it could never finish.
 
@@ -145,11 +145,11 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 > Addresses **Factory C18**
 
 - Withdrawing to the factory itself now fails with `SelfTargetNotAllowed`
-  (21). Before, it succeeded: the amount counted as withdrawn but the USDC
+  (13). Before, it succeeded: the amount counted as withdrawn but the USDC
   stayed in the shared balance, outside every operation's escrow.
 - Stellar has no `address(0)`; the nearest equivalents are the all-zero
   account key (`GAAA…AWHF`) and contract id (`CAAA…BSC4`), valid addresses no
-  one controls. Both now fail with the new `ZeroAddressNotAllowed` (29).
+  one controls. Both now fail with the new `ZeroAddressNotAllowed` (21).
 - Checked before any state change.
 
 ## Factory: unnecessary or misleading code removed
@@ -189,7 +189,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 > Addresses **Factory C15**
 
 - `start_operation`, `cancel_operation` and `pause_funding` now fail with the
-  new `StateUnchanged` (30) when the operation is already in the requested
+  new `StateUnchanged` (22) when the operation is already in the requested
   state (already started, already canceled, already paused, or resuming one
   that is not paused). Before, they succeeded and emitted
   `OperationStarted` / `OperationCanceled` / `OperationPaused` /
@@ -203,7 +203,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
 - Both returned `1` when the computed amount was zero or negative, so an order
   too small to cost one USDC base unit was sold for 1 base unit (and its
-  shares minted). They now fail with the new `AmountTooSmall` (31); this
+  shares minted). They now fail with the new `AmountTooSmall` (23); this
   covers `invest`, `fiat_invest`, `get_amount_in` and `get_amount_out`.
 - A non-positive share price or EUR/USD rate can no longer reach them
   (`InvalidPrice` at `create_operation`, `OracleInvalidPrice` on the oracle
@@ -216,7 +216,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
 - The factory prices shares as if 1 USDC were 1 USD. It now stores a second
   Reflector feed, `usdc_oracle`, and `invest` fails with the new `UsdcOffPeg`
-  (32) while USDC/USD is outside [0.98, 1.02] (bounds included as on-peg).
+  (24) while USDC/USD is outside [0.98, 1.02] (bounds included as on-peg).
 - The feed is Reflector's CEX & DEX oracle, queried for `Other("USDC")`: the
   forex feed used for EUR has no USDC price. Verified on-chain 2026-11-17:
   14 decimals, base USD, ≈1.0007 on both networks (mainnet
@@ -240,10 +240,14 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `shares_amount` shares from `oplend_holder` (normally the op-lend wallet that
   custodies euro buyers' shares) and lowers `funding_progress` by the same
   amount, so the shares are back on sale (a finished operation reopens).
-- The factory now records each investor's euro-bought shares
-  (`Position.fiat_shares`, incremented by `fiat_invest`, readable with
-  `fiat_shares(id, user)`); `fiat_refund` cannot exceed it
-  (`InsufficientFiatShares`, 33), so it cannot unwind USDC purchases.
+- No per-investor cap: an earlier `Position.fiat_shares` quota (with a
+  `fiat_shares(id, user)` getter and `InsufficientFiatShares` error) is
+  removed. It was keyed on `user` while the burn hits `oplend_holder`, which
+  nothing tied to that user, so a refund within one investor's quota could
+  burn another holder's shares, USDC-bought ones included; and the admin can
+  burn any balance through `refund_user` or `oplend_admin_burn` anyway. Like
+  `refund_user`, `fiat_refund` is now bounded by the holder's balance
+  (`InsufficientShareBalance`); `user` labels the events.
 - Emits `Refunded` with `usdc_amount: 0` plus a new `RefundedFiat`, mirroring
   `Invested` + `InvestedFiat` on the way in.
 
@@ -260,7 +264,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `batch_refund_users(id, entries: Vec<RefundEntry>)` now take both amounts
   from the admin.
 - Burning more than the user holds fails with the new
-  `InsufficientShareBalance` (34), before any transfer; the USDC is still
+  `InsufficientShareBalance` (25), before any transfer; the USDC is still
   capped by the operation's escrow (`InsufficientEscrow`). Negative amounts,
   or both zero, are rejected.
 - `Position.invested` is no longer reduced: it stays the record of USDC paid
@@ -411,8 +415,9 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `OperationCanceled` 7 → 5, `OperationPaused` 8 → 6, `TooManyShares` 10 → 7,
   `InvalidShares` 11 → 8, `InvalidAmount` 12 → 9, `Blacklisted` 13 → 10,
   `NonceAlreadyUsed` 14 → 11, `NothingToWithdraw` 18 → 12, and every code
-  from `SelfTargetNotAllowed` (21) to `InsufficientShareBalance` (34) drops
-  by 8 (13 to 26).
+  from `SelfTargetNotAllowed` (21) to `UsdcOffPeg` (32) drops by 8 (13 to 24).
+  `InsufficientFiatShares` (33) is removed (see Factory C5) and
+  `InsufficientShareBalance` goes from 34 to 25.
 - OpLend: `NotInitialized` stays 1; every code from `NegativeAmount` (3) to
   `NotAdmin` (10) drops by 1 (2 to 9).
 - Factory `OpData::flags`: `F_WITHDRAWN` moves from bit 4 to bit 3, the bit

@@ -1190,8 +1190,8 @@ fn test_invest_refused_while_usdc_off_peg() {
 }
 
 /// AUDIT Factory C5: an off-chain euro refund is mirrored with `fiat_refund`,
-/// which burns the custodied shares and puts them back on sale. It is capped
-/// at what the investor bought with euros, so it cannot unwind USDC buys.
+/// which burns the custodied shares and puts them back on sale. Like
+/// `refund_user`, it is bounded by the holder's balance.
 #[test]
 fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     let s = setup();
@@ -1215,7 +1215,6 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     s.factory
         .fiat_invest(&id, &100, &fiat_user, &holder, &nonce, &sig);
     assert!(s.factory.is_operation_finished(&id));
-    assert_eq!(s.factory.fiat_shares(&id, &fiat_user), 100);
 
     s.factory.fiat_refund(&id, &fiat_user, &holder, &40);
 
@@ -1232,7 +1231,6 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     assert_eq!(op_token.balance(&holder), 60);
     assert_eq!(op_token.total_supply(), 60);
     assert_eq!(s.factory.funding_progress(&id), 60);
-    assert_eq!(s.factory.fiat_shares(&id, &fiat_user), 60);
     assert!(!s.factory.is_operation_finished(&id));
 
     // The refunded shares are on sale again, to a USDC buyer.
@@ -1241,20 +1239,12 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     invest_as(&s, id, &usdc_user, 40, "usdc");
     assert!(s.factory.is_operation_finished(&id));
 
-    let insufficient = Some(Ok(Error::InsufficientFiatShares.into()));
-    // No more than the euro buyer still holds...
+    // No more than the holder has left.
     assert_eq!(
         s.factory
             .try_fiat_refund(&id, &fiat_user, &holder, &61)
             .err(),
-        insufficient
-    );
-    // ...and never a USDC purchase.
-    assert_eq!(
-        s.factory
-            .try_fiat_refund(&id, &usdc_user, &usdc_user, &1)
-            .err(),
-        insufficient
+        Some(Ok(Error::InsufficientShareBalance.into()))
     );
     assert_eq!(
         s.factory
@@ -1269,7 +1259,7 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
         .factory
         .try_fiat_refund(&id, &fiat_user, &holder, &10)
         .is_err());
-    assert_eq!(s.factory.fiat_shares(&id, &fiat_user), 60);
+    assert_eq!(op_token.balance(&holder), 60);
 }
 
 // --- AUDIT Factory T1: missing tests ---
