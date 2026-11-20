@@ -34,8 +34,11 @@ pub struct Operation {
 #[contracttype(export = false)]
 pub enum DataKey {
     Admin,
-    /// Factory the backend signer is read from. Replaces the stored
-    /// `BackendSigner` of earlier versions (left behind, unread, on upgrade).
+    /// Unused: declared only for backward compatibility. The stored-signer
+    /// version kept the backend key here; an in-place upgrade leaves the
+    /// entry behind, and `set_factory` deletes it. Keeping the variant
+    /// declared stops the key from being reused as if it had never existed.
+    BackendSigner,
     Factory,
     OpLend(u32),
     UsedNonce(String),

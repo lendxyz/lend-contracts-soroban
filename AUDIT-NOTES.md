@@ -434,3 +434,12 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   fails with the new error `FactoryAlreadySet` (9), so the admin can no longer
   repoint the source of the backend signer.
 - Following a later factory redeploy now takes a wallet upgrade.
+
+## OpLendWallet: legacy `BackendSigner` key declared and cleared
+
+- The upgrade leaves the stored-signer version's `DataKey::BackendSigner`
+  instance entry on-chain. The variant is declared again, documented as
+  unused and kept only for backward compatibility, so the key cannot be
+  reintroduced later as if it had never existed.
+- `set_factory`, the one-shot call made right after that upgrade, now deletes
+  the entry. A freshly deployed wallet never has it.

@@ -113,9 +113,10 @@ impl OpLendWallet {
     }
 
     /// Points a wallet upgraded from the stored-signer version at the factory
-    /// whose `backend_signer` authorizes redeems. One-shot: once a factory is
-    /// recorded it is fixed, so this fails with `FactoryAlreadySet`. The
-    /// constructor records one, so a freshly deployed wallet never needs it.
+    /// whose `backend_signer` authorizes redeems, and deletes the signer that
+    /// version stored. One-shot: once a factory is recorded it is fixed, so
+    /// this fails with `FactoryAlreadySet`. The constructor records one, so a
+    /// freshly deployed wallet never needs it.
     pub fn set_factory(e: Env, factory: Address) {
         st::require_admin(&e);
         if st::has_factory(&e) {
@@ -124,6 +125,7 @@ impl OpLendWallet {
         st::bump_instance(&e);
         require_factory(&e, &factory);
         st::write_factory(&e, &factory);
+        st::remove_legacy_backend_signer(&e);
 
         events::FactoryUpdated { factory }.publish(&e);
     }

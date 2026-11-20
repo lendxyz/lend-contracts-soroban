@@ -179,8 +179,8 @@ Constructor parameters: `admin`, `factory`. The backend signer is read from
 is the address `fiat_invest` is given as the `oplend_holder`. The factory is
 fixed once recorded. A wallet upgraded from the stored-signer version has none
 yet: point it at the factory once with `set_factory`
-(`scripts/wallet-set-factory.sh`); any later call fails with
-`FactoryAlreadySet`.
+(`scripts/wallet-set-factory.sh`), which also deletes the signer that version
+stored; any later call fails with `FactoryAlreadySet`.
 
 ### LendRewards
 

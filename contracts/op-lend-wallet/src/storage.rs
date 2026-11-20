@@ -56,6 +56,11 @@ pub fn read_backend_signer(e: &Env) -> BytesN<32> {
     FactoryClient::new(e, &read_factory(e)).backend_signer()
 }
 
+/// Deletes the key left behind by the stored-signer version, if present.
+pub fn remove_legacy_backend_signer(e: &Env) {
+    e.storage().instance().remove(&DataKey::BackendSigner);
+}
+
 // --- registry ---
 
 pub fn read_op_lend(e: &Env, op_id: u32) -> Address {

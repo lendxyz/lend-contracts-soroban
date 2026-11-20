@@ -137,7 +137,9 @@ fn setup<'a>() -> Setup<'a> {
 /// in-place upgrade: its old constructor stored a signer, not a factory.
 fn drop_factory(s: &Setup) {
     s.e.as_contract(&s.wallet_id, || {
-        s.e.storage().instance().remove(&DataKey::Factory)
+        let storage = s.e.storage().instance();
+        storage.remove(&DataKey::Factory);
+        storage.set(&DataKey::BackendSigner, &pubkey(&s.e, &signer_key()));
     });
 }
 
@@ -568,8 +570,9 @@ fn test_backend_signer_follows_the_factory() {
 }
 
 /// `set_factory` migrates a wallet upgraded from the stored-signer version:
-/// it has no factory, so signer reads fail until the admin records one.
-/// Admin-only; accounts and contracts serving no backend signer are refused.
+/// it has no factory, so signer reads fail until the admin records one, and
+/// the signer the old version stored is deleted. Admin-only; accounts and
+/// contracts serving no backend signer are refused.
 #[test]
 fn test_set_factory_points_an_upgraded_wallet_at_the_factory() {
     let s = setup();
@@ -597,6 +600,9 @@ fn test_set_factory_points_an_upgraded_wallet_at_the_factory() {
     s.wallet.set_factory(&new_factory_id);
     assert_eq!(s.wallet.factory(), new_factory_id);
     assert_eq!(s.wallet.backend_signer(), pubkey(&s.e, &rotated_key()));
+    assert!(!s.e.as_contract(&s.wallet_id, || {
+        s.e.storage().instance().has(&DataKey::BackendSigner)
+    }));
 
     // Registration and redeems now go through the recorded factory.
     s.wallet.register_op_lend(&OP_ID);
