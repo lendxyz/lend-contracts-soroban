@@ -139,19 +139,19 @@ fn scale_to_6(price: i128, decimals: u32) -> i128 {
 }
 
 /// Scale of one whole USDC in the token's own base units. Internal pricing is
-/// 6-decimal throughout (`eur_per_shares`, the oracle price, shares); only the
+/// 6-decimal throughout (`eur_per_share`, the oracle price, shares); only the
 /// leg that actually moves tokens is denominated in the token's decimals.
 fn usdc_precision(e: &Env) -> i128 {
     10i128.pow(st::usdc_decimals(e))
 }
 
 /// USDC cost for `shares_amount` shares of an operation priced at
-/// `eur_per_shares`, in USDC base units.
-pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
+/// `eur_per_share`, in USDC base units.
+pub fn amount_in(e: &Env, eur_per_share: i128, shares_amount: i128) -> i128 {
     if shares_amount <= 0 {
         panic_with_error!(e, Error::InvalidShares);
     }
-    let shares_price_eur = eur_per_shares * shares_amount / PRICE_PRECISION;
+    let shares_price_eur = eur_per_share * shares_amount / PRICE_PRECISION;
     // 6-decimal EUR * 6-decimal USD/EUR = 12 decimals. Rescaling straight into
     // the token's precision in one divide keeps every digit a 7-decimal USDC can
     // hold, instead of rounding to 1e-6 first and multiplying the loss back up.
@@ -165,8 +165,8 @@ pub fn amount_in(e: &Env, eur_per_shares: i128, shares_amount: i128) -> i128 {
     usdc_cost
 }
 
-/// Shares obtainable for `usdc_amount` USDC base units at `eur_per_shares`.
-pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
+/// Shares obtainable for `usdc_amount` USDC base units at `eur_per_share`.
+pub fn amount_out(e: &Env, eur_per_share: i128, usdc_amount: i128) -> i128 {
     if usdc_amount <= 0 {
         panic_with_error!(e, Error::InvalidAmount);
     }
@@ -176,7 +176,7 @@ pub fn amount_out(e: &Env, eur_per_shares: i128, usdc_amount: i128) -> i128 {
     // USD/EUR): two PRICE_PRECISION factors bring the quotient back to
     // 6-decimal shares.
     let shares = usdc_6 * PRICE_PRECISION * PRICE_PRECISION
-        / (eur_per_shares * get_eur_usd_price(e));
+        / (eur_per_share * get_eur_usd_price(e));
     if shares <= 0 {
         panic_with_error!(e, Error::AmountTooSmall);
     }

@@ -12,7 +12,7 @@ pub fn create_operation(
     e: &Env,
     op_name: String,
     total_shares: i128,
-    eur_per_shares: i128,
+    eur_per_share: i128,
 ) -> Address {
     st::require_admin(e);
     st::bump_instance(e);
@@ -20,13 +20,13 @@ pub fn create_operation(
     if total_shares <= 0 {
         panic_with_error!(e, Error::InvalidShares);
     }
-    if eur_per_shares <= 0 {
+    if eur_per_share <= 0 {
         panic_with_error!(e, Error::InvalidPrice);
     }
     // The operation's EUR value (`OpData::raised_euro`) is computed from this
     // product when the last share sells; if it overflowed there, the
     // operation could never finish.
-    if total_shares.checked_mul(eur_per_shares).is_none() {
+    if total_shares.checked_mul(eur_per_share).is_none() {
         panic_with_error!(e, Error::RaiseOverflow);
     }
 
@@ -58,7 +58,7 @@ pub fn create_operation(
         &OpData {
             op_token: op_token.clone(),
             total_shares,
-            eur_per_shares,
+            eur_per_share,
             funding_progress: 0,
             usdc_raised: 0,
             flags: 0,

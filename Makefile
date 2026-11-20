@@ -21,7 +21,7 @@ build:
 #   make deploy-op-lend-wallet
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3                 # uses sample recipients
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
-#   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+#   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 #   make start-operation OP_ID=0
 #   make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
 #   make invest-with-proof OP_ID=1 AMOUNT=1000000000   # SOURCE forced to test-user
@@ -38,7 +38,7 @@ build:
 #   make upgrade-contract CONTRACT=oplend OP_ID=5   # via the factory; also sets the hash new ops use
 #
 # Mainnet (signs on a Ledger — plug it in, unlock, open the Stellar app):
-#   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+#   make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 
 deploy-factory:
 	./scripts/deploy-factory.sh

@@ -38,7 +38,7 @@ SOURCE=alice \
 FACTORY_ID=CC... \
 OP_NAME="Alpha Fund" \
 TOTAL_SHARES=1000000 \    # supply cap, 6 decimals
-EUR_PER_SHARES=1000000 \  # 1 EUR per share, 6 decimals
+EUR_PER_SHARE=1000000 \   # 1 EUR per share, 6 decimals
 ./scripts/create-operation.sh
 ```
 

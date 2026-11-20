@@ -21,7 +21,7 @@ pub trait OpLendInterface {
 pub struct Operation {
     pub op_token: Address,
     pub total_shares: i128,
-    pub eur_per_shares: i128,
+    pub eur_per_share: i128,
     pub op_name: String,
 }
 
@@ -55,7 +55,7 @@ pub const F_WITHDRAWN: u32 = 1 << 3;
 pub struct OpData {
     pub op_token: Address,
     pub total_shares: i128,
-    pub eur_per_shares: i128,
+    pub eur_per_share: i128,
     pub funding_progress: i128,
     pub usdc_raised: i128,
     /// Bit set of `F_*`; four booleans as four map fields would be rewritten
@@ -85,10 +85,10 @@ impl OpData {
     }
 
     /// EUR value of the whole operation, 6-decimal like every internal amount.
-    /// Shares and `eur_per_shares` are both 6-decimal, so their product is
+    /// Shares and `eur_per_share` are both 6-decimal, so their product is
     /// 12-decimal; rescale it the same way `amount_in` prices shares.
     pub fn raised_euro(&self) -> i128 {
-        self.total_shares * self.eur_per_shares / PRICE_PRECISION
+        self.total_shares * self.eur_per_share / PRICE_PRECISION
     }
 }
 

@@ -227,7 +227,7 @@ fn test_create_operation() {
 
     let op = s.factory.get_operation(&id);
     assert_eq!(op.total_shares, 1000);
-    assert_eq!(op.eur_per_shares, EUR_PER_SHARE);
+    assert_eq!(op.eur_per_share, EUR_PER_SHARE);
     assert_eq!(op.op_token, op_addr);
     assert_eq!(s.factory.operation_count(), 1);
     assert!(!s.factory.operation_started(&id));
@@ -280,7 +280,7 @@ fn test_create_operation_rejects_non_positive_price() {
     assert_eq!(s.factory.operation_count(), 0);
 }
 
-/// AUDIT Factory C16: if `total_shares * eur_per_shares` overflows, the last
+/// AUDIT Factory C16: if `total_shares * eur_per_share` overflows, the last
 /// share sold would panic computing the operation's EUR value, so the
 /// operation could never finish. Rejected up front instead.
 #[test]

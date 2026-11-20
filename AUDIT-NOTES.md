@@ -83,7 +83,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
 > Addresses **Factory C8**
 
-- `amount_raised_euro` was `total_shares * eur_per_shares`: two 6-decimal
+- `amount_raised_euro` was `total_shares * eur_per_share`: two 6-decimal
   values, so a 12-decimal amount (2 shares at 1 EUR emitted `2_000_000_000_000`).
 - It is now divided by `PRICE_PRECISION` (1e6), the same rescale `amount_in`
   uses to price shares, so it is 6-decimal EUR like every other internal amount
@@ -134,8 +134,8 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 
 > Addresses **Factory C16**
 
-- A zero or negative `eur_per_shares` is rejected with `InvalidPrice` (19).
-- `total_shares * eur_per_shares` is checked with `checked_mul`; if it does not
+- A zero or negative `eur_per_share` is rejected with `InvalidPrice` (19).
+- `total_shares * eur_per_share` is checked with `checked_mul`; if it does not
   fit in an `i128`, creation fails with `RaiseOverflow` (20). Before, the
   operation was created and the overflow surfaced only when its last share
   sold (computing `amount_raised_euro`), so it could never finish.
@@ -168,10 +168,11 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   reads the stored amount, defaulting to zero. Its legacy test is deleted.
 - Comments fixed: `bump_instance` (was cut mid-sentence), USDC decimals (the
   testnet DummyUSDC has 7, not 6), and `amount_in` ("shares of an operation").
-- Not done: renaming `eur_per_shares` to `eur_per_share`. The name is part of
-  the public interface (`create_operation` argument, `Operation` field from
-  `get_operation`) that `lend-app` and the scripts read, so it is kept to avoid
-  breaking them.
+- `eur_per_shares` is renamed `eur_per_share`: the `create_operation` argument
+  (CLI flag `--eur_per_share`, script variable `EUR_PER_SHARE`) and the
+  `Operation` field returned by `get_operation`. Clients decoding `Operation`
+  must read the new field name; OpLendWallet's mirror of `Operation` is
+  updated with it, so the wallet must be upgraded alongside the factory.
 
 ## Factory: no silent default for cached decimals
 

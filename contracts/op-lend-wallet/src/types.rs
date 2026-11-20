@@ -27,7 +27,7 @@ pub trait FactoryInterface {
 pub struct Operation {
     pub op_token: Address,
     pub total_shares: i128,
-    pub eur_per_shares: i128,
+    pub eur_per_share: i128,
     pub op_name: String,
 }
 

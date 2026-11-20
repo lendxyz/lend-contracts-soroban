@@ -56,13 +56,13 @@ impl LendFactory {
         env: Env,
         op_name: String,
         total_shares: i128,
-        eur_per_shares: i128,
+        eur_per_share: i128,
     ) -> Address {
         operations::create_operation(
             &env,
             op_name,
             total_shares,
-            eur_per_shares,
+            eur_per_share,
         )
     }
 

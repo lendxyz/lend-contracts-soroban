@@ -75,7 +75,7 @@ impl MockFactory {
         Operation {
             op_token: e.storage().instance().get(&id).unwrap(),
             total_shares: 0,
-            eur_per_shares: 0,
+            eur_per_share: 0,
             op_name: String::from_str(&e, ""),
         }
     }

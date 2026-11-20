@@ -24,7 +24,7 @@ pub fn operations(e: &Env, id: u32) -> Operation {
     Operation {
         op_token: op.op_token,
         total_shares: op.total_shares,
-        eur_per_shares: op.eur_per_shares,
+        eur_per_share: op.eur_per_share,
         op_name: st::read_op_name(e, id),
     }
 }

@@ -245,8 +245,8 @@ pub trait OracleInterface {
 `get_eur_usd_price` reads the `EUR` price, rejects non-positive or stale prices
 (> 24h old), and scales it to 6 decimals. Pricing math:
 
-- `amount_in(eur_per_shares, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
-- `amount_out(eur_per_shares, usdc)` → shares; the 12-decimal divisor (6-decimal
+- `amount_in(eur_per_share, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
+- `amount_out(eur_per_share, usdc)` → shares; the 12-decimal divisor (6-decimal
   price × 6-decimal rate) is rescaled with `PRICE_PRECISION * PRICE_PRECISION`.
 
 `decimals()` is read once — in the constructor, and again on every
@@ -263,7 +263,7 @@ gated. Change the feed with `update_usdc_oracle_address`.
 
 ### Decimals
 
-Everything internal is 6-decimal: `eur_per_shares`, `total_shares`,
+Everything internal is 6-decimal: `eur_per_share`, `total_shares`,
 `funding_progress`, the normalized oracle price, and the op-lend share token
 (the factory passes `6` to its constructor, which rejects any other value).
 
@@ -332,7 +332,7 @@ fn __constructor(admin, usdc, oracle, usdc_oracle, backend_signer: BytesN<32>, o
 fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
 
 // Operations
-fn create_operation(op_name: String, total_shares: i128, eur_per_shares: i128) -> Address
+fn create_operation(op_name: String, total_shares: i128, eur_per_share: i128) -> Address
 fn start_operation(id: u32)
 fn cancel_operation(id: u32)
 fn pause_funding(id: u32, state: bool)
@@ -504,7 +504,7 @@ make deploy-factory
 make deploy-rewards
 make deploy-op-lend-wallet
 make deploy-dummy-usdc
-make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 make start-operation OP_ID=0
 make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...
 make wallet-register-op-lend OP_ID=1                        # wallet: op id -> its token, from the factory
@@ -512,7 +512,7 @@ make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 DRY_RUN=1   # simulat
 
 # mainnet uses the same targets and signs on a Ledger
 # (plug it in, unlock it, open the Stellar app, approve each transaction)
-make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARES=1000000
+make create-operation NETWORK=mainnet OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 ```
 
 Deployed addresses are tracked in [`DEPLOYMENTS.md`](DEPLOYMENTS.md) and in

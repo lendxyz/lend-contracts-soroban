@@ -65,7 +65,7 @@ pub fn invest(
     // Shares are priced as if 1 USDC were 1 USD; refuse USDC while it is not.
     require_usdc_pegged(e);
 
-    let cost = amount_in(e, op.eur_per_shares, shares_amount);
+    let cost = amount_in(e, op.eur_per_share, shares_amount);
 
     let msg = build_invest_message(e, id, &user, shares_amount, &nonce);
     verify_backend_sig(e, &st::read_backend_signer(e), &msg, &signature);
@@ -110,7 +110,7 @@ pub fn fiat_invest(
     st::require_not_blacklisted(e, &oplend_holder);
 
     // Fiat is settled off-chain: shares are minted but no USDC is recorded.
-    let cost = amount_in(e, op.eur_per_shares, shares_amount);
+    let cost = amount_in(e, op.eur_per_share, shares_amount);
 
     let msg = build_fiat_invest_message(
         e,
@@ -174,9 +174,9 @@ pub fn void_nonce(e: &Env, nonce: String, signature: Option<BytesN<64>>) {
 }
 
 pub fn get_amount_in(e: &Env, id: u32, shares_amount: i128) -> i128 {
-    amount_in(e, st::read_op(e, id).eur_per_shares, shares_amount)
+    amount_in(e, st::read_op(e, id).eur_per_share, shares_amount)
 }
 
 pub fn get_amount_out(e: &Env, id: u32, usdc_amount: i128) -> i128 {
-    amount_out(e, st::read_op(e, id).eur_per_shares, usdc_amount)
+    amount_out(e, st::read_op(e, id).eur_per_share, usdc_amount)
 }
