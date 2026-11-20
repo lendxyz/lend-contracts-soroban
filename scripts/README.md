@@ -19,7 +19,7 @@ NETWORK=testnet      \  # optional, default testnet
 ./scripts/deploy.sh
 ```
 
-`USDC` and `ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
+`USDC`, `EURC`, `ORACLE` and `USDC_ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. The factory caches the decimals of both tokens at deploy, so neither can be changed afterwards. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
 
 `FIRST_OP_ID` is required: the factory numbers operations from it. When
 replacing a factory, pass the old factory's `operation_count` + 1, so op ids
@@ -54,6 +54,25 @@ FACTORY_ID=CC... \
 OP_ID=0 \
 ./scripts/start-operation.sh
 ```
+
+## `withdraw-usdc.sh`
+
+Admin-only. Sends the USDC and EURC an operation raised since the previous
+withdrawal (`usdc_raised - usdc_withdrawn_amount` and
+`eurc_raised - eurc_withdrawn_amount`) from the factory to `DESTINATION`, each
+as itself. Allowed any time after the operation starts, including during the
+sale.
+
+```bash
+OP_ID=1 \             # required, operation id
+DESTINATION=G... \    # required, receives the USDC and EURC
+DRY_RUN=1 \           # optional, simulate only (--send=no)
+./scripts/withdraw-usdc.sh
+```
+
+Prints raised / withdrawn / pending per token first and aborts before signing
+when nothing is pending in either (the contract would fail with
+`NothingToWithdraw`).
 
 ## `invest.sh`
 

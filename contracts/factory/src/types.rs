@@ -25,22 +25,23 @@ pub struct Operation {
     pub op_name: String,
 }
 
-/// One refund in `batch_refund_users`: shares to burn from `user` and USDC to
-/// repay them, both decided by the admin.
+/// One refund in `batch_refund_users`: shares to burn from `user` and the USDC
+/// and EURC to repay them, all decided by the admin.
 #[contracttype]
 #[derive(Clone)]
 pub struct RefundEntry {
     pub user: Address,
     pub shares_to_burn: i128,
     pub usdc_to_refund: i128,
+    pub eurc_to_refund: i128,
 }
 
 // `OpData::flags` bits.
 pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
-/// Set on the first `withdraw_usdc`; the amount lives under
-/// `DataKey::UsdcWithdrawn`.
+/// Set on the first `withdraw_usdc` that sends USDC; the amount lives under
+/// `DataKey::UsdcWithdrawn`. EURC withdrawals do not touch it.
 pub const F_WITHDRAWN: u32 = 1 << 3;
 
 /// Everything a funding path needs, in a single ledger entry.
@@ -104,6 +105,38 @@ impl Position {
     pub const ZERO: Position = Position { invested: 0 };
 }
 
+/// EURC side of an operation's escrow, raised by `invest_eur`. Kept out of
+/// [`OpData`] (adding a field there would make every stored `Op` undecodable
+/// after an in-place upgrade) and absent for operations that never took EURC.
+#[contracttype(export = false)]
+#[derive(Clone)]
+pub struct EurcEscrow {
+    /// EURC paid in, net of refunds, in EURC base units.
+    pub raised: i128,
+    /// Cumulative EURC sent out by `withdraw_usdc`.
+    pub withdrawn: i128,
+}
+
+impl EurcEscrow {
+    pub const ZERO: EurcEscrow = EurcEscrow {
+        raised: 0,
+        withdrawn: 0,
+    };
+}
+
+/// EURC side of a [`Position`], kept apart for the same layout reason.
+#[contracttype(export = false)]
+#[derive(Clone)]
+pub struct EurcPosition {
+    /// EURC paid in by this user, in EURC base units. A record, not reduced
+    /// by refunds.
+    pub invested: i128,
+}
+
+impl EurcPosition {
+    pub const ZERO: EurcPosition = EurcPosition { invested: 0 };
+}
+
 #[contracttype(export = false)]
 pub enum DataKey {
     Admin,
@@ -126,4 +159,9 @@ pub enum DataKey {
     /// USDC/USD oracle for the depeg check, and its cached decimals.
     UsdcOracle,
     UsdcOracleDecimals,
+    /// EURC token and its cached decimals, written by the constructor.
+    Eurc,
+    EurcDecimals,
+    EurcEscrow(u32),
+    EurcPosition(u32, Address),
 }

@@ -43,3 +43,11 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Testnet | CCZ7AXRKRCHHHITUPB42CWAWDY7TP753TLEGTFPANUTHZPLE5MAB6FAM |
+
+
+## Mock EURC (testnet only)
+
+
+| Network          | Address                                    |
+| ---------------- | ------------------------------------------ |
+| Testnet | CD5WKCHYPZBK5RHQR7XIBKKAYGP34YSYROJIDG2EOUNGHMW7LRAKTGCX |

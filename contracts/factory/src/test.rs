@@ -111,6 +111,8 @@ struct Setup<'a> {
     factory_id: Address,
     usdc: StellarAssetClient<'a>,
     usdc_addr: Address,
+    eurc: StellarAssetClient<'a>,
+    eurc_addr: Address,
     oracle: MockFeedClient<'a>,
     usdc_oracle: MockFeedClient<'a>,
 }
@@ -133,39 +135,46 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
 
     let oracle_addr = eur_feed(&e);
 
-    let (factory_id, usdc_oracle) =
+    let (factory_id, usdc_oracle, eurc_addr) =
         register_factory(&e, &admin, &usdc_addr, &oracle_addr, first_op_id);
     let factory = LendFactoryClient::new(&e, &factory_id);
 
     Setup {
         oracle: MockFeedClient::new(&e, &oracle_addr),
         usdc_oracle: MockFeedClient::new(&e, &usdc_oracle),
+        eurc: StellarAssetClient::new(&e, &eurc_addr),
         e,
         factory,
         factory_id,
         usdc,
         usdc_addr,
+        eurc_addr,
     }
 }
 
 /// Deploys a factory, running its `__constructor`, with a fresh at-par
-/// USDC/USD mock. Returns (factory, USDC oracle).
+/// USDC/USD mock and a fresh 7-decimal EURC SAC (Circle's EURC is a classic
+/// asset too). Returns (factory, USDC oracle, EURC).
 fn register_factory(
     e: &Env,
     admin: &Address,
     usdc: &Address,
     oracle: &Address,
     first_op_id: u32,
-) -> (Address, Address) {
+) -> (Address, Address, Address) {
     let signer =
         BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
     let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
     let usdc_oracle = usdc_feed(e);
+    let eurc = e
+        .register_stellar_asset_contract_v2(Address::generate(e))
+        .address();
     let factory = e.register(
         LendFactory,
         (
             admin.clone(),
             usdc.clone(),
+            eurc.clone(),
             oracle.clone(),
             usdc_oracle.clone(),
             signer,
@@ -173,7 +182,7 @@ fn register_factory(
             first_op_id,
         ),
     );
-    (factory, usdc_oracle)
+    (factory, usdc_oracle, eurc)
 }
 
 /// Independent reconstruction of the `ONCHAIN_INVEST` payload. Keep it naive
@@ -336,10 +345,21 @@ fn test_order_rounding_to_zero_fails() {
     // The other direction: 1 base unit of 7-decimal USDC buys no share unit.
     let (normal, _) = create_op(&s, 1000);
     assert_eq!(s.factory.try_get_amount_out(&normal, &1).err(), too_small);
+
+    // EURC follows the same rule: 1e-12 EUR is less than 1e-7 EURC.
+    assert_eq!(s.factory.try_get_amount_in_eur(&id, &1).err(), too_small);
+    s.eurc.mint(&user, &10_000);
+    let nonce = String::from_str(&s.e, "tiny-eur");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 1, &nonce);
+    assert_eq!(
+        s.factory.try_invest_eur(&user, &id, &1, &nonce, &sig).err(),
+        too_small
+    );
+    assert_eq!(oplend::Client::new(&s.e, &op_addr).balance(&user), 0);
 }
 
-/// AUDIT Factory C12: a missing cached scale (USDC or oracle decimals) fails
-/// the quote instead of silently pricing with a guessed 6 decimals.
+/// AUDIT Factory C12: a missing cached scale (USDC, EURC or oracle decimals)
+/// fails the quote instead of silently pricing with a guessed 6 decimals.
 #[test]
 fn test_missing_decimals_fail_instead_of_defaulting() {
     use crate::types::DataKey;
@@ -356,6 +376,16 @@ fn test_missing_decimals_fail_instead_of_defaulting() {
             Err(Ok(Error::NotInitialized.into()))
         );
     }
+
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.e.as_contract(&s.factory_id, || {
+        s.e.storage().instance().remove(&DataKey::EurcDecimals);
+    });
+    assert_eq!(
+        s.factory.try_get_amount_in_eur(&id, &100),
+        Err(Ok(Error::NotInitialized.into()))
+    );
 }
 
 /// `upgrade` really swaps the executable: after pointing the factory at the
@@ -378,7 +408,7 @@ fn test_upgrade_replaces_the_executable() {
 /// A factory wired to an arbitrary USDC token, for the decimal-scale tests.
 fn factory_with_usdc<'a>(e: &Env, usdc: &Address) -> LendFactoryClient<'a> {
     let oracle = eur_feed(e);
-    let (factory_id, _) =
+    let (factory_id, _, _) =
         register_factory(e, &Address::generate(e), usdc, &oracle, 1);
     LendFactoryClient::new(e, &factory_id)
 }
@@ -695,7 +725,7 @@ fn test_refund_user() {
     let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
     s.factory.invest(&user, &id, &100, &nonce, &sig);
 
-    s.factory.refund_user(&id, &user, &100, &1100);
+    s.factory.refund_user(&id, &user, &100, &1100, &0);
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     assert_eq!(op_token.balance(&user), 0);
@@ -728,11 +758,11 @@ fn test_refund_takes_admin_decided_shares_and_usdc() {
 
     // The full position can no longer be burned from `user`...
     assert_eq!(
-        s.factory.try_refund_user(&id, &user, &100, &1100).err(),
+        s.factory.try_refund_user(&id, &user, &100, &1100, &0).err(),
         Some(Ok(Error::InsufficientShareBalance.into()))
     );
     // ...so the admin refunds only the 40 shares still held, for their USDC.
-    s.factory.refund_user(&id, &user, &40, &440);
+    s.factory.refund_user(&id, &user, &40, &440, &0);
 
     assert_eq!(op_token.balance(&user), 0);
     assert_eq!(op_token.balance(&friend), 60);
@@ -743,15 +773,19 @@ fn test_refund_takes_admin_decided_shares_and_usdc() {
 
     // Nothing to burn and nothing to pay, or negative amounts, are rejected.
     assert_eq!(
-        s.factory.try_refund_user(&id, &friend, &0, &0).err(),
+        s.factory.try_refund_user(&id, &friend, &0, &0, &0).err(),
         Some(Ok(Error::InvalidAmount.into()))
     );
     assert_eq!(
-        s.factory.try_refund_user(&id, &friend, &-1, &0).err(),
+        s.factory.try_refund_user(&id, &friend, &-1, &0, &0).err(),
         Some(Ok(Error::InvalidShares.into()))
     );
     assert_eq!(
-        s.factory.try_refund_user(&id, &friend, &1, &-1).err(),
+        s.factory.try_refund_user(&id, &friend, &1, &-1, &0).err(),
+        Some(Ok(Error::InvalidAmount.into()))
+    );
+    assert_eq!(
+        s.factory.try_refund_user(&id, &friend, &1, &0, &-1).err(),
         Some(Ok(Error::InvalidAmount.into()))
     );
 }
@@ -903,11 +937,11 @@ fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
     invest_as(&s, b, &other, 100, "b1");
 
     assert_eq!(
-        s.factory.try_refund_user(&a, &early, &100, &1100),
+        s.factory.try_refund_user(&a, &early, &100, &1100, &0),
         Err(Ok(Error::InsufficientEscrow.into()))
     );
     // Money invested after the withdrawal is still escrowed and refundable.
-    s.factory.refund_user(&a, &late, &10, &110);
+    s.factory.refund_user(&a, &late, &10, &110, &0);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     assert_eq!(usdc_tok.balance(&late), 10_000);
     assert_eq!(usdc_tok.balance(&s.factory_id), 1100); // operation b, intact
@@ -965,6 +999,7 @@ fn test_batch_refund_accumulates_across_users() {
         user: user.clone(),
         shares_to_burn: shares,
         usdc_to_refund: usdc,
+        eurc_to_refund: 0,
     };
     let batch = soroban_sdk::vec![
         &s.e,
@@ -1484,18 +1519,20 @@ fn test_refunds_after_cancel() {
     );
 
     let (first, shares, usdc) = &buyers[0];
-    s.factory.refund_user(&id, first, shares, usdc);
+    s.factory.refund_user(&id, first, shares, usdc, &0);
     let batch = soroban_sdk::vec![
         &s.e,
         RefundEntry {
             user: buyers[1].0.clone(),
             shares_to_burn: buyers[1].1,
             usdc_to_refund: buyers[1].2,
+            eurc_to_refund: 0,
         },
         RefundEntry {
             user: buyers[2].0.clone(),
             shares_to_burn: buyers[2].1,
             usdc_to_refund: buyers[2].2,
+            eurc_to_refund: 0,
         }
     ];
     s.factory.batch_refund_users(&id, &batch);
@@ -1574,4 +1611,242 @@ fn test_wallet_reads_operations_and_signer_from_the_factory() {
     assert_eq!(wallet.backend_signer(), s.factory.backend_signer());
     // An id the factory never created cannot be registered.
     assert!(wallet.try_register_op_lend(&(id + 1)).is_err());
+}
+
+// --- EURC ---
+
+fn invest_eur_as(
+    s: &Setup,
+    id: u32,
+    user: &Address,
+    shares: i128,
+    nonce: &str,
+) {
+    let nonce = String::from_str(&s.e, nonce);
+    let sig = sign_invest(&s.e, &s.factory_id, id, user, shares, &nonce);
+    s.factory.invest_eur(user, &id, &shares, &nonce, &sig);
+}
+
+/// Shares are priced in EUR, so EURC pays the price as is: 100 shares at
+/// 1 EUR are 1000 base units of a 7-decimal EURC, with no oracle leg. The
+/// `Invested` event still reports USD: the same 1100 a USDC invest charges.
+#[test]
+fn test_invest_eur_happy_path() {
+    let s = setup();
+    let eurc_tok = soroban_sdk::token::Client::new(&s.e, &s.eurc_addr);
+    let (id, op_addr) = create_op(&s, 1000);
+    let user = Address::generate(&s.e);
+    s.eurc.mint(&user, &10_000);
+    assert_eq!(s.factory.eurc(), s.eurc_addr);
+
+    // Like every funding path (AUDIT Factory C9), not before the start.
+    let nonce = String::from_str(&s.e, "e1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
+    assert_eq!(
+        s.factory
+            .try_invest_eur(&user, &id, &100, &nonce, &sig)
+            .err(),
+        Some(Ok(Error::OperationNotStarted.into()))
+    );
+    s.factory.start_operation(&id);
+
+    assert_eq!(s.factory.get_amount_in_eur(&id, &100), 1000);
+    s.factory.invest_eur(&user, &id, &100, &nonce, &sig);
+    let expected = crate::events::Invested {
+        investor: user.clone(),
+        operation_id: id,
+        usdc_amount: 1100,
+        shares_bought: 100,
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
+
+    assert_eq!(s.factory.funding_progress(&id), 100);
+    assert_eq!(s.factory.eurc_raised(&id), 1000);
+    assert_eq!(s.factory.eurc_raised_per_client(&id, &user), 1000);
+    // EURC never leaks into the USDC books.
+    assert_eq!(s.factory.usdc_raised(&id), 0);
+    assert_eq!(s.factory.usdc_raised_per_client(&id, &user), 0);
+    assert_eq!(eurc_tok.balance(&user), 9_000);
+    assert_eq!(eurc_tok.balance(&s.factory_id), 1000);
+    assert_eq!(oplend::Client::new(&s.e, &op_addr).balance(&user), 100);
+}
+
+/// The USDC depeg check (AUDIT Factory C4) guards USDC purchases only: an
+/// EURC purchase moves no USDC.
+#[test]
+fn test_invest_eur_ignores_the_usdc_peg() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.eurc.mint(&user, &10_000);
+
+    s.usdc_oracle.set_price(&90_000_000_000_000); // 0.90
+    invest_eur_as(&s, id, &user, 100, "e1");
+    assert_eq!(s.factory.eurc_raised(&id), 1000);
+}
+
+/// `invest_eur` takes the existing `ONCHAIN_INVEST` signature, so one backend
+/// authorization pays in either token, once.
+#[test]
+fn test_invest_eur_shares_nonces_with_invest() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    s.eurc.mint(&user, &10_000);
+
+    let nonce = String::from_str(&s.e, "n1");
+    let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
+    s.factory.invest(&user, &id, &100, &nonce, &sig);
+    assert_eq!(
+        s.factory.try_invest_eur(&user, &id, &100, &nonce, &sig),
+        Err(Ok(Error::NonceAlreadyUsed.into()))
+    );
+}
+
+/// `withdraw_usdc` sends each token of a mixed raise as itself. An EURC-only
+/// withdrawal leaves `usdc_withdrawn` unset.
+#[test]
+fn test_withdraw_mixed_raise_sends_both_tokens() {
+    let s = setup();
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    let eurc_tok = soroban_sdk::token::Client::new(&s.e, &s.eurc_addr);
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &100_000);
+    s.eurc.mint(&user, &100_000);
+    let dest = Address::generate(&s.e);
+    let withdrawn = |usdc_amount: i128, eurc_amount: i128| {
+        let expected = crate::events::FundingWithdrawn {
+            operation_id: id,
+            usdc_amount,
+            eurc_amount,
+        }
+        .to_xdr(&s.e, &s.factory_id);
+        let events = s.e.events().all().filter_by_contract(&s.factory_id);
+        events.events().contains(&expected)
+    };
+
+    invest_eur_as(&s, id, &user, 100, "e1");
+    s.factory.withdraw_usdc(&id, &dest);
+    assert!(withdrawn(0, 1000));
+    assert_eq!(eurc_tok.balance(&dest), 1000);
+    assert!(!s.factory.usdc_withdrawn(&id));
+
+    invest_as(&s, id, &user, 100, "u1");
+    invest_eur_as(&s, id, &user, 50, "e2");
+    s.factory.withdraw_usdc(&id, &dest);
+    assert!(withdrawn(1100, 500));
+    assert_eq!(usdc_tok.balance(&dest), 1100);
+    assert_eq!(eurc_tok.balance(&dest), 1500);
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
+    assert_eq!(s.factory.eurc_withdrawn_amount(&id), 1500);
+    assert!(s.factory.usdc_withdrawn(&id));
+    assert_eq!(usdc_tok.balance(&s.factory_id), 0);
+    assert_eq!(eurc_tok.balance(&s.factory_id), 0);
+    assert_eq!(
+        s.factory.try_withdraw_usdc(&id, &dest),
+        Err(Ok(Error::NothingToWithdraw.into()))
+    );
+}
+
+/// Refunds pay the USDC and EURC amounts the admin decides (AUDIT Factory
+/// C1), each as itself: a moved EUR/USD rate changes nothing, `Refunded`
+/// reports both raw amounts, and the `invested` records are left as they were.
+#[test]
+fn test_refund_mixed_raise_returns_each_token() {
+    let s = setup();
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+    let eurc_tok = soroban_sdk::token::Client::new(&s.e, &s.eurc_addr);
+    let (id, op_addr) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let usdc_only = Address::generate(&s.e);
+    let eurc_only = Address::generate(&s.e);
+    let both = Address::generate(&s.e);
+    let users = [&usdc_only, &eurc_only, &both];
+    for u in users {
+        s.usdc.mint(u, &10_000);
+        s.eurc.mint(u, &10_000);
+    }
+
+    invest_as(&s, id, &usdc_only, 100, "u1"); // 1100 USDC
+    invest_eur_as(&s, id, &eurc_only, 100, "e1"); // 1000 EURC
+    invest_as(&s, id, &both, 10, "u2"); // 110 USDC
+    invest_eur_as(&s, id, &both, 20, "e2"); // 200 EURC
+
+    s.oracle.set_price(&120_000_000_000_000); // EUR/USD 1.2
+    s.factory.refund_user(&id, &both, &30, &110, &200);
+    let expected = crate::events::Refunded {
+        investor: both.clone(),
+        operation_id: id,
+        usdc_amount: 110,
+        eurc_amount: 200,
+        shares_refunded: 30,
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
+
+    let entry = |user: &Address, shares, usdc, eurc| RefundEntry {
+        user: user.clone(),
+        shares_to_burn: shares,
+        usdc_to_refund: usdc,
+        eurc_to_refund: eurc,
+    };
+    let batch = soroban_sdk::vec![
+        &s.e,
+        entry(&eurc_only, 100, 0, 1000),
+        entry(&usdc_only, 100, 1100, 0)
+    ];
+    s.factory.batch_refund_users(&id, &batch);
+
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+    for u in users {
+        assert_eq!(op_token.balance(u), 0);
+        assert_eq!(usdc_tok.balance(u), 10_000);
+        assert_eq!(eurc_tok.balance(u), 10_000);
+    }
+    assert_eq!(s.factory.eurc_raised_per_client(&id, &eurc_only), 1000);
+    assert_eq!(s.factory.eurc_raised_per_client(&id, &both), 200);
+    assert_eq!(s.factory.funding_progress(&id), 0);
+    assert_eq!(s.factory.usdc_raised(&id), 0);
+    assert_eq!(s.factory.eurc_raised(&id), 0);
+    assert_eq!(usdc_tok.balance(&s.factory_id), 0);
+    assert_eq!(eurc_tok.balance(&s.factory_id), 0);
+}
+
+/// EURC of every operation sits in one balance, exactly like USDC.
+#[test]
+fn test_eurc_refund_after_withdraw_cannot_drain_other_operation() {
+    let s = setup();
+    let eurc_tok = soroban_sdk::token::Client::new(&s.e, &s.eurc_addr);
+    let (a, _) = create_op(&s, 1000);
+    let (b, _) = create_op(&s, 1000);
+    s.factory.start_operation(&a);
+    s.factory.start_operation(&b);
+    let early = Address::generate(&s.e);
+    let late = Address::generate(&s.e);
+    let other = Address::generate(&s.e);
+    for u in [&early, &late, &other] {
+        s.eurc.mint(u, &10_000);
+    }
+
+    invest_eur_as(&s, a, &early, 100, "a1");
+    s.factory.withdraw_usdc(&a, &Address::generate(&s.e));
+    invest_eur_as(&s, a, &late, 10, "a2");
+    invest_eur_as(&s, b, &other, 100, "b1");
+
+    assert_eq!(
+        s.factory.try_refund_user(&a, &early, &100, &0, &1000),
+        Err(Ok(Error::InsufficientEscrow.into()))
+    );
+    // EURC invested after the withdrawal is still escrowed and refundable.
+    s.factory.refund_user(&a, &late, &10, &0, &100);
+    assert_eq!(eurc_tok.balance(&late), 10_000);
+    assert_eq!(eurc_tok.balance(&s.factory_id), 1000); // operation b, intact
 }

@@ -22,6 +22,7 @@ impl LendFactory {
         env: Env,
         admin: Address,
         usdc: Address,
+        eurc: Address,
         oracle: Address,
         usdc_oracle: Address,
         backend_signer: BytesN<32>,
@@ -39,6 +40,7 @@ impl LendFactory {
 
         st::set_operation_count(&env, first_op_id - 1);
         st::set_usdc(&env, &usdc);
+        st::set_eurc(&env, &eurc);
         oracle::set_oracle(&env, &oracle);
         oracle::set_usdc_oracle(&env, &usdc_oracle);
         st::bump_instance(&env);
@@ -58,12 +60,7 @@ impl LendFactory {
         total_shares: i128,
         eur_per_share: i128,
     ) -> Address {
-        operations::create_operation(
-            &env,
-            op_name,
-            total_shares,
-            eur_per_share,
-        )
+        operations::create_operation(&env, op_name, total_shares, eur_per_share)
     }
 
     pub fn cancel_operation(env: Env, id: u32) {
@@ -89,6 +86,18 @@ impl LendFactory {
         signature: BytesN<64>,
     ) {
         invest::invest(&env, user, id, shares_amount, nonce, signature);
+    }
+
+    /// `invest` paid in EURC; same guards and backend signature.
+    pub fn invest_eur(
+        env: Env,
+        user: Address,
+        id: u32,
+        shares_amount: i128,
+        nonce: String,
+        signature: BytesN<64>,
+    ) {
+        invest::invest_eur(&env, user, id, shares_amount, nonce, signature);
     }
 
     pub fn fiat_invest(
@@ -119,6 +128,10 @@ impl LendFactory {
         invest::get_amount_in(&env, id, shares_amount)
     }
 
+    pub fn get_amount_in_eur(env: Env, id: u32, shares_amount: i128) -> i128 {
+        invest::get_amount_in_eur(&env, id, shares_amount)
+    }
+
     pub fn get_amount_out(env: Env, id: u32, usdc_amount: i128) -> i128 {
         invest::get_amount_out(&env, id, usdc_amount)
     }
@@ -126,15 +139,24 @@ impl LendFactory {
     // --- Admin ---
 
     /// Burns `shares_to_burn` of `user`'s shares and repays `usdc_to_refund`
-    /// USDC from the operation's escrow; the admin decides both amounts.
+    /// USDC and `eurc_to_refund` EURC from the operation's escrow; the admin
+    /// decides all three amounts.
     pub fn refund_user(
         env: Env,
         id: u32,
         user: Address,
         shares_to_burn: i128,
         usdc_to_refund: i128,
+        eurc_to_refund: i128,
     ) {
-        admin::refund_user(&env, id, user, shares_to_burn, usdc_to_refund);
+        admin::refund_user(
+            &env,
+            id,
+            user,
+            shares_to_burn,
+            usdc_to_refund,
+            eurc_to_refund,
+        );
     }
 
     pub fn batch_refund_users(env: Env, id: u32, entries: Vec<RefundEntry>) {
@@ -190,6 +212,8 @@ impl LendFactory {
         admin::oplend_admin_burn(&env, op_id, user, value);
     }
 
+    /// Sends the USDC and EURC operation `id` raised since the previous
+    /// withdrawal to `destination`.
     pub fn withdraw_usdc(env: Env, id: u32, destination: Address) {
         admin::withdraw_usdc(&env, id, destination);
     }
@@ -221,6 +245,10 @@ impl LendFactory {
 
     pub fn usdc(env: Env) -> Address {
         getters::usdc(&env)
+    }
+
+    pub fn eurc(env: Env) -> Address {
+        getters::eurc(&env)
     }
 
     pub fn oplend_wasm_hash(env: Env) -> BytesN<32> {
@@ -267,12 +295,24 @@ impl LendFactory {
         getters::usdc_withdrawn_amount(&env, id)
     }
 
+    pub fn eurc_raised(env: Env, id: u32) -> i128 {
+        getters::eurc_raised(&env, id)
+    }
+
+    pub fn eurc_withdrawn_amount(env: Env, id: u32) -> i128 {
+        getters::eurc_withdrawn_amount(&env, id)
+    }
+
     pub fn operation_canceled(env: Env, id: u32) -> bool {
         getters::operation_canceled(&env, id)
     }
 
     pub fn usdc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
         getters::usdc_raised_per_client(&env, id, user)
+    }
+
+    pub fn eurc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
+        getters::eurc_raised_per_client(&env, id, user)
     }
 
     pub fn blacklisted(env: Env, user: Address) -> bool {

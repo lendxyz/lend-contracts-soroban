@@ -5,61 +5,105 @@ use crate::events;
 use crate::oracle::{set_oracle, set_usdc_oracle};
 use crate::storage as st;
 use crate::types::{
-    DataKey, OpData, OpLendClient, RefundEntry, F_STARTED, F_WITHDRAWN,
+    DataKey, EurcEscrow, OpData, OpLendClient, RefundEntry, F_STARTED,
+    F_WITHDRAWN,
 };
 
-/// Burns `shares_to_burn` of the user's shares and repays `usdc_to_refund`
-/// USDC, both decided by the admin. The two are not tied to each other (shares
-/// move between holders, euro buyers have no USDC recorded), so neither is
-/// derived from the other or from `Position::invested`, which is left as the
-/// record of USDC paid in.
-fn refund_one(
-    e: &Env,
+/// One operation's escrow (USDC and EURC), read once and written once per
+/// refund call however many users it covers.
+struct Refunds<'a> {
     id: u32,
-    op: &mut OpData,
-    oplend: &OpLendClient,
-    usdc: &token::Client,
-    entry: RefundEntry,
-    withdrawn: i128,
-) {
-    let RefundEntry {
-        user,
-        shares_to_burn,
-        usdc_to_refund,
-    } = entry;
+    op: OpData,
+    usdc_withdrawn: i128,
+    eurc: EurcEscrow,
+    eurc_raised_before: i128,
+    oplend: OpLendClient<'a>,
+    usdc: token::Client<'a>,
+}
 
-    if shares_to_burn < 0 {
-        panic_with_error!(e, Error::InvalidShares);
-    }
-    if usdc_to_refund < 0 || (shares_to_burn == 0 && usdc_to_refund == 0) {
-        panic_with_error!(e, Error::InvalidAmount);
-    }
-    if shares_to_burn > oplend.balance(&user) {
-        panic_with_error!(e, Error::InsufficientShareBalance);
-    }
-    // USDC of every operation sits in one balance: refunding more than this
-    // operation still holds would pay out another operation's escrow.
-    if usdc_to_refund > op.usdc_raised - withdrawn {
-        panic_with_error!(e, Error::InsufficientEscrow);
+impl<'a> Refunds<'a> {
+    fn load(e: &'a Env, id: u32) -> Self {
+        let op = st::read_op(e, id);
+        let eurc = st::read_eurc_escrow(e, id);
+        Refunds {
+            id,
+            usdc_withdrawn: st::read_usdc_withdrawn(e, id),
+            eurc_raised_before: eurc.raised,
+            eurc,
+            oplend: OpLendClient::new(e, &op.op_token),
+            usdc: st::usdc_client(e),
+            op,
+        }
     }
 
-    op.funding_progress -= shares_to_burn;
-    op.usdc_raised -= usdc_to_refund;
+    /// Burns `shares_to_burn` of the user's shares and repays `usdc_to_refund`
+    /// USDC and `eurc_to_refund` EURC, all decided by the admin. They are not
+    /// tied to each other (shares move between holders, euro buyers have no
+    /// token recorded), so none is derived from another or from the
+    /// `invested` records, which are left as the record of what was paid in.
+    fn refund(&mut self, e: &Env, entry: RefundEntry) {
+        let RefundEntry {
+            user,
+            shares_to_burn,
+            usdc_to_refund,
+            eurc_to_refund,
+        } = entry;
 
-    if shares_to_burn > 0 {
-        oplend.burn(&user, &shares_to_burn);
-    }
-    if usdc_to_refund > 0 {
-        usdc.transfer(&e.current_contract_address(), &user, &usdc_to_refund);
+        if shares_to_burn < 0 {
+            panic_with_error!(e, Error::InvalidShares);
+        }
+        if usdc_to_refund < 0
+            || eurc_to_refund < 0
+            || (shares_to_burn == 0
+                && usdc_to_refund == 0
+                && eurc_to_refund == 0)
+        {
+            panic_with_error!(e, Error::InvalidAmount);
+        }
+        if shares_to_burn > self.oplend.balance(&user) {
+            panic_with_error!(e, Error::InsufficientShareBalance);
+        }
+        // Each token of every operation sits in one balance: refunding more
+        // than this operation still holds would pay out another operation's
+        // escrow.
+        if usdc_to_refund > self.op.usdc_raised - self.usdc_withdrawn
+            || eurc_to_refund > self.eurc.raised - self.eurc.withdrawn
+        {
+            panic_with_error!(e, Error::InsufficientEscrow);
+        }
+
+        self.op.funding_progress -= shares_to_burn;
+        self.op.usdc_raised -= usdc_to_refund;
+        self.eurc.raised -= eurc_to_refund;
+
+        if shares_to_burn > 0 {
+            self.oplend.burn(&user, &shares_to_burn);
+        }
+        let this = e.current_contract_address();
+        if usdc_to_refund > 0 {
+            self.usdc.transfer(&this, &user, &usdc_to_refund);
+        }
+        if eurc_to_refund > 0 {
+            st::eurc_client(e).transfer(&this, &user, &eurc_to_refund);
+        }
+
+        events::Refunded {
+            investor: user,
+            operation_id: self.id,
+            usdc_amount: usdc_to_refund,
+            eurc_amount: eurc_to_refund,
+            shares_refunded: shares_to_burn,
+        }
+        .publish(e);
     }
 
-    events::Refunded {
-        investor: user,
-        operation_id: id,
-        usdc_amount: usdc_to_refund,
-        shares_refunded: shares_to_burn,
+    fn store(&self, e: &Env) {
+        st::write_op(e, self.id, &self.op);
+        // Operations that never took EURC keep no `EurcEscrow` entry.
+        if self.eurc.raised != self.eurc_raised_before {
+            st::write_eurc_escrow(e, self.id, &self.eurc);
+        }
     }
-    .publish(e);
 }
 
 pub fn refund_user(
@@ -68,41 +112,33 @@ pub fn refund_user(
     user: Address,
     shares_to_burn: i128,
     usdc_to_refund: i128,
+    eurc_to_refund: i128,
 ) {
     st::require_admin(e);
     st::bump_instance(e);
 
-    let mut op = st::read_op(e, id);
-    let oplend = OpLendClient::new(e, &op.op_token);
-    let withdrawn = st::read_usdc_withdrawn(e, id);
-    refund_one(
+    let mut refunds = Refunds::load(e, id);
+    refunds.refund(
         e,
-        id,
-        &mut op,
-        &oplend,
-        &st::usdc_client(e),
         RefundEntry {
             user,
             shares_to_burn,
             usdc_to_refund,
+            eurc_to_refund,
         },
-        withdrawn,
     );
-    st::write_op(e, id, &op);
+    refunds.store(e);
 }
 
 pub fn batch_refund_users(e: &Env, id: u32, entries: Vec<RefundEntry>) {
     st::require_admin(e);
     st::bump_instance(e);
 
-    let mut op = st::read_op(e, id);
-    let oplend = OpLendClient::new(e, &op.op_token);
-    let usdc = st::usdc_client(e);
-    let withdrawn = st::read_usdc_withdrawn(e, id);
+    let mut refunds = Refunds::load(e, id);
     for entry in entries.iter() {
-        refund_one(e, id, &mut op, &oplend, &usdc, entry, withdrawn);
+        refunds.refund(e, entry);
     }
-    st::write_op(e, id, &op);
+    refunds.store(e);
 }
 
 /// Mirrors an off-chain euro refund: burns `shares_amount` shares from
@@ -138,6 +174,7 @@ pub fn fiat_refund(
         investor: user.clone(),
         operation_id: id,
         usdc_amount: 0,
+        eurc_amount: 0,
         shares_refunded: shares_amount,
     }
     .publish(e);
@@ -241,6 +278,9 @@ fn require_payout_destination(e: &Env, destination: &Address) {
     }
 }
 
+/// Sends everything operation `id` raised since the previous withdrawal, in
+/// both tokens: USDC and EURC each go to `destination` as themselves, and
+/// `FundingWithdrawn` reports each amount in its own token's base units.
 pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     st::require_admin(e);
     st::bump_instance(e);
@@ -252,25 +292,33 @@ pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     }
     let withdrawn = st::read_usdc_withdrawn(e, id);
     let amount = op.usdc_raised - withdrawn;
-    if amount <= 0 {
+    let mut eurc = st::read_eurc_escrow(e, id);
+    let eurc_amount = eurc.raised - eurc.withdrawn;
+    if amount <= 0 && eurc_amount <= 0 {
         panic_with_error!(e, Error::NothingToWithdraw);
     }
 
-    st::write_usdc_withdrawn(e, id, op.usdc_raised);
-    if !op.flag(F_WITHDRAWN) {
-        op.set_flag(F_WITHDRAWN, true);
-        st::write_op(e, id, &op);
+    let this = e.current_contract_address();
+
+    if amount > 0 {
+        st::write_usdc_withdrawn(e, id, op.usdc_raised);
+        if !op.flag(F_WITHDRAWN) {
+            op.set_flag(F_WITHDRAWN, true);
+            st::write_op(e, id, &op);
+        }
+        st::usdc_client(e).transfer(&this, &destination, &amount);
     }
 
-    st::usdc_client(e).transfer(
-        &e.current_contract_address(),
-        &destination,
-        &amount,
-    );
+    if eurc_amount > 0 {
+        eurc.withdrawn = eurc.raised;
+        st::write_eurc_escrow(e, id, &eurc);
+        st::eurc_client(e).transfer(&this, &destination, &eurc_amount);
+    }
 
     events::FundingWithdrawn {
         operation_id: id,
-        usdc_amount: amount,
+        usdc_amount: amount.max(0),
+        eurc_amount: eurc_amount.max(0),
     }
     .publish(e);
 }

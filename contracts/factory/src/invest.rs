@@ -6,12 +6,14 @@ use crate::crypto::{
 };
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::{amount_in, amount_out, require_usdc_pegged};
+use crate::oracle::{
+    amount_in, amount_out, eurc_amount_in, eurc_to_usdc, require_usdc_pegged,
+};
 use crate::storage as st;
 use crate::types::{OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED};
 
-/// An operation that accepts investments: started and not finished. Both
-/// funding paths (`invest`, `fiat_invest`) go through this.
+/// An operation that accepts investments: started and not finished. Every
+/// funding path (`invest`, `invest_eur`, `fiat_invest`) goes through this.
 fn load_started(e: &Env, id: u32) -> OpData {
     let op = st::read_op(e, id);
     if op.finished() {
@@ -85,6 +87,57 @@ pub fn invest(
         investor: user.clone(),
         operation_id: id,
         usdc_amount: cost,
+        shares_bought: shares_amount,
+    }
+    .publish(e);
+
+    OpLendClient::new(e, &op.op_token).mint(&user, &shares_amount);
+    maybe_finish(e, id, &op);
+}
+
+/// `invest` paid in EURC. Shares are priced in EUR, so the EURC cost has no
+/// oracle leg; the EUR/USD rate only values the purchase for `Invested`. Takes
+/// the same `ONCHAIN_INVEST` signature as `invest`: one backend authorization
+/// pays in either token, once.
+pub fn invest_eur(
+    e: &Env,
+    user: Address,
+    id: u32,
+    shares_amount: i128,
+    nonce: String,
+    signature: BytesN<64>,
+) {
+    user.require_auth();
+    st::bump_instance(e);
+    st::require_not_blacklisted(e, &user);
+
+    let mut op = load_started(e, id);
+    check_fundable(e, &op, shares_amount);
+
+    let cost = eurc_amount_in(e, op.eur_per_share, shares_amount);
+    let cost_usd = eurc_to_usdc(e, cost);
+
+    let msg = build_invest_message(e, id, &user, shares_amount, &nonce);
+    verify_backend_sig(e, &st::read_backend_signer(e), &msg, &signature);
+    consume_nonce(e, &nonce);
+
+    op.funding_progress += shares_amount;
+    st::write_op(e, id, &op);
+
+    let mut escrow = st::read_eurc_escrow(e, id);
+    escrow.raised += cost;
+    st::write_eurc_escrow(e, id, &escrow);
+
+    let mut pos = st::read_eurc_position(e, id, &user);
+    pos.invested += cost;
+    st::write_eurc_position(e, id, &user, &pos);
+
+    st::eurc_client(e).transfer(&user, e.current_contract_address(), &cost);
+
+    events::Invested {
+        investor: user.clone(),
+        operation_id: id,
+        usdc_amount: cost_usd,
         shares_bought: shares_amount,
     }
     .publish(e);
@@ -175,6 +228,10 @@ pub fn void_nonce(e: &Env, nonce: String, signature: Option<BytesN<64>>) {
 
 pub fn get_amount_in(e: &Env, id: u32, shares_amount: i128) -> i128 {
     amount_in(e, st::read_op(e, id).eur_per_share, shares_amount)
+}
+
+pub fn get_amount_in_eur(e: &Env, id: u32, shares_amount: i128) -> i128 {
+    eurc_amount_in(e, st::read_op(e, id).eur_per_share, shares_amount)
 }
 
 pub fn get_amount_out(e: &Env, id: u32, usdc_amount: i128) -> i128 {

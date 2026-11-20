@@ -40,6 +40,9 @@ pub struct OperationFinished {
     pub amount_raised_euro: i128,
 }
 
+/// `usdc_amount` is in USDC base units: the USDC paid for `invest`, and for
+/// `invest_eur` / `fiat_invest` the USD value of the purchase at the current
+/// EUR/USD rate.
 #[contractevent]
 pub struct Invested {
     #[topic]
@@ -61,6 +64,9 @@ pub struct InvestedFiat {
     pub shares_bought: i128,
 }
 
+/// `usdc_amount` and `eurc_amount` are the USDC and EURC sent back, each in
+/// its own token's base units: refunds are admin-decided amounts, not a
+/// reversal of `Invested`, so no oracle conversion applies.
 #[contractevent]
 pub struct Refunded {
     #[topic]
@@ -68,10 +74,11 @@ pub struct Refunded {
     #[topic]
     pub operation_id: u32,
     pub usdc_amount: i128,
+    pub eurc_amount: i128,
     pub shares_refunded: i128,
 }
 
-/// Emitted with `Refunded` (which carries `usdc_amount: 0`) when a euro
+/// Emitted with `Refunded` (which carries zero USDC and EURC) when a euro
 /// purchase is refunded off-chain and mirrored with `fiat_refund`.
 #[contractevent]
 pub struct RefundedFiat {
@@ -89,6 +96,7 @@ pub struct FundingWithdrawn {
     #[topic]
     pub operation_id: u32,
     pub usdc_amount: i128,
+    pub eurc_amount: i128,
 }
 
 #[contractevent]

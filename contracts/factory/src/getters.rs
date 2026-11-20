@@ -7,6 +7,10 @@ pub fn usdc(e: &Env) -> Address {
     st::read_usdc(e)
 }
 
+pub fn eurc(e: &Env) -> Address {
+    st::read_eurc(e)
+}
+
 pub fn oplend_wasm_hash(e: &Env) -> BytesN<32> {
     st::read_oplend_wasm_hash(e)
 }
@@ -54,6 +58,16 @@ pub fn usdc_withdrawn_amount(e: &Env, id: u32) -> i128 {
     st::read_usdc_withdrawn(e, id)
 }
 
+pub fn eurc_raised(e: &Env, id: u32) -> i128 {
+    st::require_op_exists(e, id);
+    st::read_eurc_escrow(e, id).raised
+}
+
+pub fn eurc_withdrawn_amount(e: &Env, id: u32) -> i128 {
+    st::require_op_exists(e, id);
+    st::read_eurc_escrow(e, id).withdrawn
+}
+
 pub fn operation_canceled(e: &Env, id: u32) -> bool {
     st::read_op(e, id).flag(F_CANCELED)
 }
@@ -65,6 +79,11 @@ pub fn is_operation_finished(e: &Env, id: u32) -> bool {
 pub fn usdc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
     st::require_op_exists(e, id);
     st::read_position(e, id, &user).invested
+}
+
+pub fn eurc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
+    st::require_op_exists(e, id);
+    st::read_eurc_position(e, id, &user).invested
 }
 
 pub fn blacklisted(e: &Env, user: Address) -> bool {

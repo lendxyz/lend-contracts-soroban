@@ -7,8 +7,8 @@
 # inside the deploy transaction, so there is no separate init call to front-run.
 #
 # Network, signer and addresses come from scripts/common.sh (NETWORK, SOURCE,
-# USDC, ORACLE, USDC_ORACLE, BACKEND_SIGNER, SIGN_ARGS); override any of them
-# in the env.
+# USDC, EURC, ORACLE, USDC_ORACLE, BACKEND_SIGNER, SIGN_ARGS); override any of
+# them in the env.
 #
 # Required env vars:
 #   FIRST_OP_ID     Id of the first operation this factory creates. When
@@ -31,7 +31,7 @@ source "$SCRIPT_DIR/common.sh"
 OPLEND_WASM="$WASM_DIR/lend_operation_token.wasm"
 FACTORY_WASM="$WASM_DIR/lend_factory.wasm"
 
-req SOURCE USDC ORACLE USDC_ORACLE BACKEND_SIGNER FIRST_OP_ID
+req SOURCE USDC EURC ORACLE USDC_ORACLE BACKEND_SIGNER FIRST_OP_ID
 
 # The contract's backend_signer param is BytesN<32>, so the CLI needs 64 hex
 # chars; a G... strkey is decoded for convenience.
@@ -43,6 +43,7 @@ echo "==> Network:        $NETWORK"
 echo "==> Source:         $SOURCE"
 echo "==> Admin:          $ADMIN"
 echo "==> USDC:           $USDC"
+echo "==> EURC:           $EURC"
 echo "==> Oracle:         $ORACLE"
 echo "==> USDC oracle:    $USDC_ORACLE"
 echo "==> Backend signer: $BACKEND_SIGNER"
@@ -98,6 +99,7 @@ else
     -- \
     --admin "$ADMIN" \
     --usdc "$USDC" \
+    --eurc "$EURC" \
     --oracle "$ORACLE" \
     --usdc_oracle "$USDC_ORACLE" \
     --backend_signer "$BACKEND_SIGNER" \

@@ -50,6 +50,8 @@ case "$NETWORK" in
     # 7-decimal redeploy needs a new FACTORY_ID too, since the factory caches
     # the USDC scale in its constructor and never re-reads it.
     : "${USDC:=$DUMMY_USDC_ID}"
+    # Mock EURC (7 decimals, see DEPLOYMENTS.md); stands in for Circle EURC.
+    : "${EURC:=CD5WKCHYPZBK5RHQR7XIBKKAYGP34YSYROJIDG2EOUNGHMW7LRAKTGCX}"
     # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
     # EUR). Verified 2026-06-02 on-chain.
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
@@ -106,6 +108,9 @@ case "$NETWORK" in
 
     # Circle USDC SAC + Reflector FX oracle. Verified on 10th Aug. 2026.
     : "${USDC:=CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75}"
+    # Circle EURC SAC (EURC:GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2,
+    # 7 decimals). Verified on-chain 18th Nov. 2026.
+    : "${EURC:=CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
     # Reflector CEX & DEX feed, prices USDC in USD. Verified 2026-11-17.
     : "${USDC_ORACLE:=CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN}"
