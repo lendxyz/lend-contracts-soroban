@@ -5,7 +5,7 @@ use soroban_sdk::{
 use crate::errors::Error;
 use crate::events;
 use crate::storage as st;
-use crate::types::{OpData, F_CANCELED, F_PAUSED, F_STARTED};
+use crate::types::{Escrow, OpData, F_CANCELED, F_PAUSED, F_STARTED};
 use crate::utils::{op_symbol, prefixed};
 
 pub fn create_operation(
@@ -60,7 +60,8 @@ pub fn create_operation(
             total_shares,
             eur_per_share,
             funding_progress: 0,
-            usdc_raised: 0,
+            usdc: Escrow::ZERO,
+            eurc: Escrow::ZERO,
             flags: 0,
         },
     );

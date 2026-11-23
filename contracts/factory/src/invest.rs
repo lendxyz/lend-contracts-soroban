@@ -6,11 +6,11 @@ use crate::crypto::{
 };
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::{
-    amount_in, amount_out, eurc_amount_in, eurc_to_usdc, require_usdc_pegged,
-};
+use crate::oracle::{amount_in, amount_out, require_pegged, usd_value};
 use crate::storage as st;
-use crate::types::{OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED};
+use crate::types::{
+    Coin, OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED,
+};
 
 /// An operation that accepts investments: started and not finished. Every
 /// funding path (`invest`, `invest_eur`, `fiat_invest`) goes through this.
@@ -50,8 +50,13 @@ fn maybe_finish(e: &Env, id: u32, op: &OpData) {
     }
 }
 
+/// Buys `shares_amount` shares of operation `id` for `coin`: USDC for the
+/// `invest` entry point, EURC for `invest_eur`. Both take the same
+/// `ONCHAIN_INVEST` signature, so one backend authorization pays in either
+/// coin, once.
 pub fn invest(
     e: &Env,
+    coin: Coin,
     user: Address,
     id: u32,
     shares_amount: i128,
@@ -64,80 +69,34 @@ pub fn invest(
 
     let mut op = load_started(e, id);
     check_fundable(e, &op, shares_amount);
-    // Shares are priced as if 1 USDC were 1 USD; refuse USDC while it is not.
-    require_usdc_pegged(e);
+    // Shares are priced as if 1 USDC were 1 USD and 1 EURC were 1 EUR; refuse
+    // a coin while it is not.
+    require_pegged(e, coin);
 
-    let cost = amount_in(e, op.eur_per_share, shares_amount);
+    let cost = amount_in(e, coin, op.eur_per_share, shares_amount);
 
     let msg = build_invest_message(e, id, &user, shares_amount, &nonce);
     verify_backend_sig(e, &st::read_backend_signer(e), &msg, &signature);
     consume_nonce(e, &nonce);
 
     op.funding_progress += shares_amount;
-    op.usdc_raised += cost;
+    op.escrow_mut(coin).raised += cost;
     st::write_op(e, id, &op);
 
     let mut pos = st::read_position(e, id, &user);
-    pos.invested += cost;
+    *pos.invested_mut(coin) += cost;
     st::write_position(e, id, &user, &pos);
 
-    st::usdc_client(e).transfer(&user, e.current_contract_address(), &cost);
+    st::token_client(e, coin).transfer(
+        &user,
+        e.current_contract_address(),
+        &cost,
+    );
 
     events::Invested {
         investor: user.clone(),
         operation_id: id,
-        usdc_amount: cost,
-        shares_bought: shares_amount,
-    }
-    .publish(e);
-
-    OpLendClient::new(e, &op.op_token).mint(&user, &shares_amount);
-    maybe_finish(e, id, &op);
-}
-
-/// `invest` paid in EURC. Shares are priced in EUR, so the EURC cost has no
-/// oracle leg; the EUR/USD rate only values the purchase for `Invested`. Takes
-/// the same `ONCHAIN_INVEST` signature as `invest`: one backend authorization
-/// pays in either token, once.
-pub fn invest_eur(
-    e: &Env,
-    user: Address,
-    id: u32,
-    shares_amount: i128,
-    nonce: String,
-    signature: BytesN<64>,
-) {
-    user.require_auth();
-    st::bump_instance(e);
-    st::require_not_blacklisted(e, &user);
-
-    let mut op = load_started(e, id);
-    check_fundable(e, &op, shares_amount);
-
-    let cost = eurc_amount_in(e, op.eur_per_share, shares_amount);
-    let cost_usd = eurc_to_usdc(e, cost);
-
-    let msg = build_invest_message(e, id, &user, shares_amount, &nonce);
-    verify_backend_sig(e, &st::read_backend_signer(e), &msg, &signature);
-    consume_nonce(e, &nonce);
-
-    op.funding_progress += shares_amount;
-    st::write_op(e, id, &op);
-
-    let mut escrow = st::read_eurc_escrow(e, id);
-    escrow.raised += cost;
-    st::write_eurc_escrow(e, id, &escrow);
-
-    let mut pos = st::read_eurc_position(e, id, &user);
-    pos.invested += cost;
-    st::write_eurc_position(e, id, &user, &pos);
-
-    st::eurc_client(e).transfer(&user, e.current_contract_address(), &cost);
-
-    events::Invested {
-        investor: user.clone(),
-        operation_id: id,
-        usdc_amount: cost_usd,
+        usdc_amount: usd_value(e, coin, cost),
         shares_bought: shares_amount,
     }
     .publish(e);
@@ -162,8 +121,9 @@ pub fn fiat_invest(
     st::require_not_blacklisted(e, &user);
     st::require_not_blacklisted(e, &oplend_holder);
 
-    // Fiat is settled off-chain: shares are minted but no USDC is recorded.
-    let cost = amount_in(e, op.eur_per_share, shares_amount);
+    // Fiat is settled off-chain: shares are minted but no coin is recorded.
+    // The USDC-equivalent cost only values the purchase for `Invested`.
+    let cost = amount_in(e, Coin::Usdc, op.eur_per_share, shares_amount);
 
     let msg = build_fiat_invest_message(
         e,
@@ -226,14 +186,15 @@ pub fn void_nonce(e: &Env, nonce: String, signature: Option<BytesN<64>>) {
     events::NonceVoided { nonce }.publish(e);
 }
 
-pub fn get_amount_in(e: &Env, id: u32, shares_amount: i128) -> i128 {
-    amount_in(e, st::read_op(e, id).eur_per_share, shares_amount)
+pub fn get_amount_in(
+    e: &Env,
+    coin: Coin,
+    id: u32,
+    shares_amount: i128,
+) -> i128 {
+    amount_in(e, coin, st::read_op(e, id).eur_per_share, shares_amount)
 }
 
-pub fn get_amount_in_eur(e: &Env, id: u32, shares_amount: i128) -> i128 {
-    eurc_amount_in(e, st::read_op(e, id).eur_per_share, shares_amount)
-}
-
-pub fn get_amount_out(e: &Env, id: u32, usdc_amount: i128) -> i128 {
-    amount_out(e, st::read_op(e, id).eur_per_share, usdc_amount)
+pub fn get_amount_out(e: &Env, coin: Coin, id: u32, amount: i128) -> i128 {
+    amount_out(e, coin, st::read_op(e, id).eur_per_share, amount)
 }

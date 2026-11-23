@@ -3,7 +3,7 @@ use soroban_sdk::{
 };
 
 use crate::errors::Error;
-use crate::types::{DataKey, Operation, RefundEntry};
+use crate::types::{Coin, DataKey, Operation, RefundEntry};
 use crate::{admin, getters, invest, operations, oracle, storage as st};
 
 #[contract]
@@ -24,7 +24,7 @@ impl LendFactory {
         usdc: Address,
         eurc: Address,
         oracle: Address,
-        usdc_oracle: Address,
+        stablecoin_oracle: Address,
         backend_signer: BytesN<32>,
         oplend_wasm_hash: BytesN<32>,
         first_op_id: u32,
@@ -39,10 +39,10 @@ impl LendFactory {
         st::write_oplend_wasm_hash(&env, &oplend_wasm_hash);
 
         st::set_operation_count(&env, first_op_id - 1);
-        st::set_usdc(&env, &usdc);
-        st::set_eurc(&env, &eurc);
+        st::set_token(&env, Coin::Usdc, &usdc);
+        st::set_token(&env, Coin::Eurc, &eurc);
         oracle::set_oracle(&env, &oracle);
-        oracle::set_usdc_oracle(&env, &usdc_oracle);
+        oracle::set_stablecoin_oracle(&env, &stablecoin_oracle);
         st::bump_instance(&env);
     }
 
@@ -77,6 +77,7 @@ impl LendFactory {
 
     // --- Invest ---
 
+    /// Buys shares with USDC. Refused while USDC/USD is off its peg.
     pub fn invest(
         env: Env,
         user: Address,
@@ -85,10 +86,19 @@ impl LendFactory {
         nonce: String,
         signature: BytesN<64>,
     ) {
-        invest::invest(&env, user, id, shares_amount, nonce, signature);
+        invest::invest(
+            &env,
+            Coin::Usdc,
+            user,
+            id,
+            shares_amount,
+            nonce,
+            signature,
+        );
     }
 
-    /// `invest` paid in EURC; same guards and backend signature.
+    /// `invest` paid in EURC; same guards and backend signature. Refused
+    /// while EURC/EUR is off its peg.
     pub fn invest_eur(
         env: Env,
         user: Address,
@@ -97,7 +107,15 @@ impl LendFactory {
         nonce: String,
         signature: BytesN<64>,
     ) {
-        invest::invest_eur(&env, user, id, shares_amount, nonce, signature);
+        invest::invest(
+            &env,
+            Coin::Eurc,
+            user,
+            id,
+            shares_amount,
+            nonce,
+            signature,
+        );
     }
 
     pub fn fiat_invest(
@@ -125,15 +143,19 @@ impl LendFactory {
     }
 
     pub fn get_amount_in(env: Env, id: u32, shares_amount: i128) -> i128 {
-        invest::get_amount_in(&env, id, shares_amount)
+        invest::get_amount_in(&env, Coin::Usdc, id, shares_amount)
     }
 
     pub fn get_amount_in_eur(env: Env, id: u32, shares_amount: i128) -> i128 {
-        invest::get_amount_in_eur(&env, id, shares_amount)
+        invest::get_amount_in(&env, Coin::Eurc, id, shares_amount)
     }
 
     pub fn get_amount_out(env: Env, id: u32, usdc_amount: i128) -> i128 {
-        invest::get_amount_out(&env, id, usdc_amount)
+        invest::get_amount_out(&env, Coin::Usdc, id, usdc_amount)
+    }
+
+    pub fn get_amount_out_eur(env: Env, id: u32, eurc_amount: i128) -> i128 {
+        invest::get_amount_out(&env, Coin::Eurc, id, eurc_amount)
     }
 
     // --- Admin ---
@@ -177,8 +199,9 @@ impl LendFactory {
         admin::update_oracle_address(&env, new_oracle);
     }
 
-    pub fn update_usdc_oracle_address(env: Env, new_oracle: Address) {
-        admin::update_usdc_oracle_address(&env, new_oracle);
+    /// Feed pricing USDC and EURC in USD, for the depeg checks.
+    pub fn update_stablecoin_oracle_address(env: Env, new_oracle: Address) {
+        admin::update_stablecoin_oracle_address(&env, new_oracle);
     }
 
     pub fn update_backend_signer(env: Env, new_signer: BytesN<32>) {
@@ -214,8 +237,8 @@ impl LendFactory {
 
     /// Sends the USDC and EURC operation `id` raised since the previous
     /// withdrawal to `destination`.
-    pub fn withdraw_usdc(env: Env, id: u32, destination: Address) {
-        admin::withdraw_usdc(&env, id, destination);
+    pub fn withdraw_funds(env: Env, id: u32, destination: Address) {
+        admin::withdraw_funds(&env, id, destination);
     }
 
     pub fn transfer_ownership(env: Env, new_admin: Address) {
@@ -244,11 +267,11 @@ impl LendFactory {
     }
 
     pub fn usdc(env: Env) -> Address {
-        getters::usdc(&env)
+        getters::token(&env, Coin::Usdc)
     }
 
     pub fn eurc(env: Env) -> Address {
-        getters::eurc(&env)
+        getters::token(&env, Coin::Eurc)
     }
 
     pub fn oplend_wasm_hash(env: Env) -> BytesN<32> {
@@ -276,7 +299,11 @@ impl LendFactory {
     }
 
     pub fn usdc_raised(env: Env, id: u32) -> i128 {
-        getters::usdc_raised(&env, id)
+        getters::raised(&env, Coin::Usdc, id)
+    }
+
+    pub fn eurc_raised(env: Env, id: u32) -> i128 {
+        getters::raised(&env, Coin::Eurc, id)
     }
 
     pub fn funding_paused(env: Env, id: u32) -> bool {
@@ -287,20 +314,17 @@ impl LendFactory {
         getters::operation_started(&env, id)
     }
 
-    pub fn usdc_withdrawn(env: Env, id: u32) -> bool {
-        getters::usdc_withdrawn(&env, id)
+    /// Whether any withdrawal, in either coin, has happened.
+    pub fn funds_withdrawn(env: Env, id: u32) -> bool {
+        getters::funds_withdrawn(&env, id)
     }
 
     pub fn usdc_withdrawn_amount(env: Env, id: u32) -> i128 {
-        getters::usdc_withdrawn_amount(&env, id)
-    }
-
-    pub fn eurc_raised(env: Env, id: u32) -> i128 {
-        getters::eurc_raised(&env, id)
+        getters::withdrawn_amount(&env, Coin::Usdc, id)
     }
 
     pub fn eurc_withdrawn_amount(env: Env, id: u32) -> i128 {
-        getters::eurc_withdrawn_amount(&env, id)
+        getters::withdrawn_amount(&env, Coin::Eurc, id)
     }
 
     pub fn operation_canceled(env: Env, id: u32) -> bool {
@@ -308,11 +332,11 @@ impl LendFactory {
     }
 
     pub fn usdc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
-        getters::usdc_raised_per_client(&env, id, user)
+        getters::raised_per_client(&env, Coin::Usdc, id, user)
     }
 
     pub fn eurc_raised_per_client(env: Env, id: u32, user: Address) -> i128 {
-        getters::eurc_raised_per_client(&env, id, user)
+        getters::raised_per_client(&env, Coin::Eurc, id, user)
     }
 
     pub fn blacklisted(env: Env, user: Address) -> bool {

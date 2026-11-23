@@ -43,21 +43,21 @@ case "$NETWORK" in
     : "${FACTORY_ID:=CD7FI3F7HQJ2POJF6V2KVDT7Z5IJCH6A57XUE6YNUTE3D5PYMX2ZDXZQ}"
     : "${REWARDS_ID:=CCDA226CTGRXT3AS2AXENI757ICIMOX3XTOSMPVICCXBLK56UY734ITE}"
     : "${DUMMY_USDC_ID:=CCZ7AXRKRCHHHITUPB42CWAWDY7TP753TLEGTFPANUTHZPLE5MAB6FAM}"
+    : "${DUMMY_EURC_ID:=CD5WKCHYPZBK5RHQR7XIBKKAYGP34YSYROJIDG2EOUNGHMW7LRAKTGCX}"
     : "${OPLEND_WALLET_ID:=CBUIDJMBY4FUBXVD24ZBO2PABJDEH3PYMPCR7VYI7NLARN4DN5EN2FL3}"
 
     # DummyUSDC stands in for Circle USDC on testnet, and is now deployed with 7
-    # decimals to match it. NOTE: the id above is the older 6-decimal token; a
-    # 7-decimal redeploy needs a new FACTORY_ID too, since the factory caches
-    # the USDC scale in its constructor and never re-reads it.
+    # decimals to match it.
     : "${USDC:=$DUMMY_USDC_ID}"
     # Mock EURC (7 decimals, see DEPLOYMENTS.md); stands in for Circle EURC.
-    : "${EURC:=CD5WKCHYPZBK5RHQR7XIBKKAYGP34YSYROJIDG2EOUNGHMW7LRAKTGCX}"
+    : "${EURC:=$DUMMY_EURC_ID}"
     # Reflector FX oracle: the fiat/forex feed (base USD, 14 decimals, carries
     # EUR). Verified 2026-06-02 on-chain.
     : "${ORACLE:=CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W}"
     # Reflector CEX & DEX feed (base USD, 14 decimals): the one that prices
-    # USDC itself, for the factory's depeg check. Verified 2026-11-17 on-chain.
-    : "${USDC_ORACLE:=CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63}"
+    # USDC and EURC themselves, for the factory's depeg checks. Verified
+    # 2026-11-23 on-chain (USDC and EURC both listed and priced).
+    : "${STABLECOIN_ORACLE:=CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63}"
     # Backend ed25519 key that authorizes invest / fiat-invest.
     : "${BACKEND_SIGNER:=GAOQ67SJWIJSKZXKZTPWIQTRI6EGTDVDLRXSWUZHMMPGS3MVNGCOVEMA}"
     # Local CLI identity holding that key's *secret*. fiat-invest.sh signs the
@@ -112,8 +112,9 @@ case "$NETWORK" in
     # 7 decimals). Verified on-chain 18th Nov. 2026.
     : "${EURC:=CDTKPWPLOURQA2SGTKTUQOWRCBZEORB4BWBOMJ3D3ZTQQSGE5F6JBQLV}"
     : "${ORACLE:=CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC}"
-    # Reflector CEX & DEX feed, prices USDC in USD. Verified 2026-11-17.
-    : "${USDC_ORACLE:=CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN}"
+    # Reflector CEX & DEX feed, prices USDC and EURC in USD. Verified
+    # 2026-11-23 (both listed and priced).
+    : "${STABLECOIN_ORACLE:=CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN}"
     : "${BACKEND_SIGNER:=GCD42CYVB5P3LSSDTEPGRYNQSVP555B5TFMXU7FZZL65W54NUC7FVILX}"
     : "${BACKEND_SIGNER_KEY:=lend-mainnet-signer}"
     : "${FIAT_HOLDER:=CACWIITWTXV47Z5EGVCE73HO5JEZENPZZFKQYPCZDWLNB5TF6RJ44CBI}"

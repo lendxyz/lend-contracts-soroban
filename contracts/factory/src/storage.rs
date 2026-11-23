@@ -1,7 +1,7 @@
 use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
 use crate::errors::Error;
-use crate::types::{DataKey, EurcEscrow, EurcPosition, OpData, Position};
+use crate::types::{Coin, DataKey, OpData, Position};
 
 const DAY_IN_LEDGERS: u32 = 17_280;
 
@@ -34,66 +34,38 @@ pub fn require_admin(e: &Env) -> Address {
     admin
 }
 
-pub fn read_usdc(e: &Env) -> Address {
-    match e.storage().instance().get(&DataKey::Usdc) {
-        Some(usdc) => usdc,
+pub fn read_token(e: &Env, coin: Coin) -> Address {
+    match e.storage().instance().get(&DataKey::Token(coin)) {
+        Some(token) => token,
         None => panic_with_error!(e, Error::NotInitialized),
     }
 }
 
-/// Stores the USDC token and caches its `decimals()`, so the pricing path does
-/// not pay a cross-contract call per invest.
-pub fn set_usdc(e: &Env, usdc: &Address) {
-    let decimals = token::Client::new(e, usdc).decimals();
+/// Stores `coin`'s token and caches its `decimals()`, so the pricing path does
+/// not pay a cross-contract call per invest. Only the constructor calls it:
+/// every amount in storage is denominated in the token's units, so swapping
+/// it would strand the existing escrow.
+pub fn set_token(e: &Env, coin: Coin, token: &Address) {
+    let decimals = token::Client::new(e, token).decimals();
     let instance = e.storage().instance();
-    instance.set(&DataKey::Usdc, usdc);
-    instance.set(&DataKey::UsdcDecimals, &decimals);
+    instance.set(&DataKey::Token(coin), token);
+    instance.set(&DataKey::TokenDecimals(coin), &decimals);
 }
 
-/// Cached USDC decimals. Circle's USDC is a classic Stellar asset wrapped in a
-/// SAC, so on mainnet it reports 7; the testnet DummyUSDC is deployed with 7
-/// to match.
-/// Written by the constructor; a missing value means a broken setup, so it
-/// fails instead of pricing against a guessed scale.
-pub fn usdc_decimals(e: &Env) -> u32 {
-    match e.storage().instance().get(&DataKey::UsdcDecimals) {
+/// Cached decimals of `coin`'s token. Circle's USDC and EURC are classic
+/// Stellar assets wrapped in SACs, so on mainnet both report 7; the testnet
+/// mocks are deployed with 7 to match. Written by the constructor; a missing
+/// value means a broken setup, so it fails instead of pricing against a
+/// guessed scale.
+pub fn token_decimals(e: &Env, coin: Coin) -> u32 {
+    match e.storage().instance().get(&DataKey::TokenDecimals(coin)) {
         Some(decimals) => decimals,
         None => panic_with_error!(e, Error::NotInitialized),
     }
 }
 
-pub fn usdc_client(e: &Env) -> token::Client<'_> {
-    token::Client::new(e, &read_usdc(e))
-}
-
-pub fn read_eurc(e: &Env) -> Address {
-    match e.storage().instance().get(&DataKey::Eurc) {
-        Some(eurc) => eurc,
-        None => panic_with_error!(e, Error::NotInitialized),
-    }
-}
-
-/// Stores the EURC token and caches its `decimals()`, like [`set_usdc`]. Only
-/// the constructor calls it: every EURC amount in storage is denominated in
-/// this token's units, so swapping it would strand the existing escrow.
-pub fn set_eurc(e: &Env, eurc: &Address) {
-    let decimals = token::Client::new(e, eurc).decimals();
-    let instance = e.storage().instance();
-    instance.set(&DataKey::Eurc, eurc);
-    instance.set(&DataKey::EurcDecimals, &decimals);
-}
-
-/// Cached EURC decimals (7 for Circle's EURC SAC and the testnet mock).
-/// Written by the constructor; fails rather than guess a scale.
-pub fn eurc_decimals(e: &Env) -> u32 {
-    match e.storage().instance().get(&DataKey::EurcDecimals) {
-        Some(decimals) => decimals,
-        None => panic_with_error!(e, Error::NotInitialized),
-    }
-}
-
-pub fn eurc_client(e: &Env) -> token::Client<'_> {
-    token::Client::new(e, &read_eurc(e))
+pub fn token_client(e: &Env, coin: Coin) -> token::Client<'_> {
+    token::Client::new(e, &read_token(e, coin))
 }
 
 pub fn read_backend_signer(e: &Env) -> BytesN<32> {
@@ -164,38 +136,6 @@ pub fn write_op_name(e: &Env, id: u32, name: &String) {
         .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
 }
 
-/// Cumulative USDC withdrawn from operation `id`; zero until its first
-/// `withdraw_usdc`.
-pub fn read_usdc_withdrawn(e: &Env, id: u32) -> i128 {
-    e.storage()
-        .persistent()
-        .get(&DataKey::UsdcWithdrawn(id))
-        .unwrap_or(0)
-}
-
-pub fn write_usdc_withdrawn(e: &Env, id: u32, amount: i128) {
-    let key = DataKey::UsdcWithdrawn(id);
-    e.storage().persistent().set(&key, &amount);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
-}
-
-pub fn read_eurc_escrow(e: &Env, id: u32) -> EurcEscrow {
-    e.storage()
-        .persistent()
-        .get(&DataKey::EurcEscrow(id))
-        .unwrap_or(EurcEscrow::ZERO)
-}
-
-pub fn write_eurc_escrow(e: &Env, id: u32, escrow: &EurcEscrow) {
-    let key = DataKey::EurcEscrow(id);
-    e.storage().persistent().set(&key, escrow);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
-}
-
 // --- positions ---
 
 pub fn read_position(e: &Env, id: u32, user: &Address) -> Position {
@@ -207,26 +147,6 @@ pub fn read_position(e: &Env, id: u32, user: &Address) -> Position {
 
 pub fn write_position(e: &Env, id: u32, user: &Address, pos: &Position) {
     let key = DataKey::Position(id, user.clone());
-    e.storage().persistent().set(&key, pos);
-    e.storage()
-        .persistent()
-        .extend_ttl(&key, OP_THRESHOLD, OP_BUMP);
-}
-
-pub fn read_eurc_position(e: &Env, id: u32, user: &Address) -> EurcPosition {
-    e.storage()
-        .persistent()
-        .get(&DataKey::EurcPosition(id, user.clone()))
-        .unwrap_or(EurcPosition::ZERO)
-}
-
-pub fn write_eurc_position(
-    e: &Env,
-    id: u32,
-    user: &Address,
-    pos: &EurcPosition,
-) {
-    let key = DataKey::EurcPosition(id, user.clone());
     e.storage().persistent().set(&key, pos);
     e.storage()
         .persistent()

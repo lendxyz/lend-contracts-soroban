@@ -19,7 +19,7 @@ NETWORK=testnet      \  # optional, default testnet
 ./scripts/deploy.sh
 ```
 
-`USDC`, `EURC`, `ORACLE` and `USDC_ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. The factory caches the decimals of both tokens at deploy, so neither can be changed afterwards. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
+`USDC`, `EURC`, `ORACLE` and `STABLECOIN_ORACLE` default per `NETWORK` (see [Network addresses](#network-addresses)); set them to override. The factory caches the decimals of both tokens at deploy, so neither can be changed afterwards. `ADMIN` defaults to the `SOURCE` address. Prints `FACTORY_ID` and `OPLEND_WASM_HASH` on success.
 
 `FIRST_OP_ID` is required: the factory numbers operations from it. When
 replacing a factory, pass the old factory's `operation_count` + 1, so op ids
@@ -55,7 +55,7 @@ OP_ID=0 \
 ./scripts/start-operation.sh
 ```
 
-## `withdraw-usdc.sh`
+## `withdraw-funds.sh`
 
 Admin-only. Sends the USDC and EURC an operation raised since the previous
 withdrawal (`usdc_raised - usdc_withdrawn_amount` and
@@ -67,7 +67,7 @@ sale.
 OP_ID=1 \             # required, operation id
 DESTINATION=G... \    # required, receives the USDC and EURC
 DRY_RUN=1 \           # optional, simulate only (--send=no)
-./scripts/withdraw-usdc.sh
+./scripts/withdraw-funds.sh
 ```
 
 Prints raised / withdrawn / pending per token first and aborts before signing
@@ -400,14 +400,14 @@ on testnet; set it to override.
 ## Network addresses
 
 `deploy.sh` fills these in by `NETWORK` unless you override `USDC` / `ORACLE` /
-`USDC_ORACLE`.
+`STABLECOIN_ORACLE`.
 Verified 2026-06-02 (on-chain + Circle/Stellar docs).
 
 | Asset | testnet | mainnet |
 |---|---|---|
 | **USDC** (SAC) | `CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA` | `CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75` |
 | **Reflector FX oracle** | `CCSSOHTBL3LEWUCBBEB5NJFC2OKFRC74OWEIJIZLRJBGAAU4VMU5NV4W` | `CBKGPWGKSKZF52CFHMTRR23TBWTPMRDIYZ4O2P5VS65BMHYH4DXMCJZC` |
-| **Reflector CEX & DEX oracle** (USDC/USD) | `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63` | `CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN` |
+| **Reflector CEX & DEX oracle** (USDC/USD and EURC/USD) | `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63` | `CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN` |
 
 - **Reflector FX oracle** = the fiat/forex feed (one of Reflector's three
   oracles). Base asset `USD`, `decimals() = 14`, quotes EUR via

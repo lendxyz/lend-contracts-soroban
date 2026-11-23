@@ -30,10 +30,10 @@ mod wallet {
     );
 }
 
-/// Mock Reflector feed, 14 decimals, answering only for the symbol it was
-/// deployed with (so a factory asking for the wrong asset gets no price).
-/// Tests move the price, remove it, or backdate it to exercise the factory's
-/// oracle checks.
+/// Mock Reflector feed, 14 decimals, answering only for the symbols it was
+/// given a price for (so a factory asking for the wrong asset gets no price).
+/// Tests move a price, remove them all, or backdate them to exercise the
+/// factory's oracle checks.
 #[contract]
 pub struct MockFeed;
 
@@ -41,33 +41,40 @@ pub struct MockFeed;
 impl MockFeed {
     pub fn __constructor(e: Env, symbol: Symbol, price: i128) {
         e.storage().instance().set(&symbol_short!("sym"), &symbol);
-        e.storage().instance().set(&symbol_short!("price"), &price);
+        e.storage().instance().set(&symbol, &price);
     }
+    /// Moves the price of the symbol the feed was deployed with.
     pub fn set_price(e: Env, price: i128) {
-        e.storage().instance().set(&symbol_short!("price"), &price);
+        let symbol: Symbol =
+            e.storage().instance().get(&symbol_short!("sym")).unwrap();
+        Self::set_price_of(e, symbol, price);
+    }
+    pub fn set_price_of(e: Env, symbol: Symbol, price: i128) {
+        e.storage().instance().set(&symbol, &price);
         e.storage().instance().remove(&symbol_short!("none"));
     }
-    /// The feed has no price for its symbol any more.
+    /// The feed has no price for any symbol any more.
     pub fn remove_price(e: Env) {
         e.storage().instance().set(&symbol_short!("none"), &true);
     }
-    /// Reports its price as published `age` seconds ago.
+    /// Reports its prices as published `age` seconds ago.
     pub fn set_age(e: Env, age: u64) {
         e.storage().instance().set(&symbol_short!("age"), &age);
     }
     pub fn lastprice(e: Env, asset: Asset) -> Option<PriceData> {
         let st = e.storage().instance();
-        let symbol: Symbol = st.get(&symbol_short!("sym")).unwrap();
-        let removed = st.has(&symbol_short!("none"));
+        if st.has(&symbol_short!("none")) {
+            return None;
+        }
         match asset {
-            Asset::Other(s) if s == symbol && !removed => Some(PriceData {
-                price: st.get(&symbol_short!("price")).unwrap(),
+            Asset::Other(symbol) => st.get(&symbol).map(|price| PriceData {
+                price,
                 timestamp: e
                     .ledger()
                     .timestamp()
                     .saturating_sub(st.get(&symbol_short!("age")).unwrap_or(0)),
             }),
-            _ => None,
+            Asset::Stellar(_) => None,
         }
     }
     pub fn decimals(_e: Env) -> u32 {
@@ -80,9 +87,14 @@ fn eur_feed(e: &Env) -> Address {
     e.register(MockFeed, (symbol_short!("EUR"), 110_000_000_000_000_i128))
 }
 
-/// USDC/USD feed at par.
-fn usdc_feed(e: &Env) -> Address {
-    e.register(MockFeed, (symbol_short!("USDC"), 100_000_000_000_000_i128))
+/// Stablecoin feed with both coins at par: USDC at 1 USD, EURC at 1.1 USD
+/// (1 EUR at the `eur_feed` rate).
+fn stablecoin_feed(e: &Env) -> Address {
+    let feed =
+        e.register(MockFeed, (symbol_short!("USDC"), 100_000_000_000_000_i128));
+    MockFeedClient::new(e, &feed)
+        .set_price_of(&symbol_short!("EURC"), &110_000_000_000_000_i128);
+    feed
 }
 
 /// A USDC whose scale differs from the 7-decimal SAC the rest of the tests use.
@@ -107,6 +119,7 @@ fn signer_key() -> SigningKey {
 
 struct Setup<'a> {
     e: Env,
+    admin: Address,
     factory: LendFactoryClient<'a>,
     factory_id: Address,
     usdc: StellarAssetClient<'a>,
@@ -114,7 +127,7 @@ struct Setup<'a> {
     eurc: StellarAssetClient<'a>,
     eurc_addr: Address,
     oracle: MockFeedClient<'a>,
-    usdc_oracle: MockFeedClient<'a>,
+    stablecoin_oracle: MockFeedClient<'a>,
 }
 
 fn setup<'a>() -> Setup<'a> {
@@ -135,15 +148,16 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
 
     let oracle_addr = eur_feed(&e);
 
-    let (factory_id, usdc_oracle, eurc_addr) =
+    let (factory_id, stablecoin_oracle, eurc_addr) =
         register_factory(&e, &admin, &usdc_addr, &oracle_addr, first_op_id);
     let factory = LendFactoryClient::new(&e, &factory_id);
 
     Setup {
         oracle: MockFeedClient::new(&e, &oracle_addr),
-        usdc_oracle: MockFeedClient::new(&e, &usdc_oracle),
+        stablecoin_oracle: MockFeedClient::new(&e, &stablecoin_oracle),
         eurc: StellarAssetClient::new(&e, &eurc_addr),
         e,
+        admin,
         factory,
         factory_id,
         usdc,
@@ -153,8 +167,8 @@ fn setup_from<'a>(first_op_id: u32) -> Setup<'a> {
 }
 
 /// Deploys a factory, running its `__constructor`, with a fresh at-par
-/// USDC/USD mock and a fresh 7-decimal EURC SAC (Circle's EURC is a classic
-/// asset too). Returns (factory, USDC oracle, EURC).
+/// stablecoin feed and a fresh 7-decimal EURC SAC (Circle's EURC is a classic
+/// asset too). Returns (factory, stablecoin oracle, EURC).
 fn register_factory(
     e: &Env,
     admin: &Address,
@@ -165,7 +179,7 @@ fn register_factory(
     let signer =
         BytesN::from_array(e, &signer_key().verifying_key().to_bytes());
     let wasm_hash = e.deployer().upload_contract_wasm(oplend::WASM);
-    let usdc_oracle = usdc_feed(e);
+    let stablecoin_oracle = stablecoin_feed(e);
     let eurc = e
         .register_stellar_asset_contract_v2(Address::generate(e))
         .address();
@@ -176,13 +190,13 @@ fn register_factory(
             usdc.clone(),
             eurc.clone(),
             oracle.clone(),
-            usdc_oracle.clone(),
+            stablecoin_oracle.clone(),
             signer,
             wasm_hash,
             first_op_id,
         ),
     );
-    (factory, usdc_oracle, eurc)
+    (factory, stablecoin_oracle, eurc)
 }
 
 /// Independent reconstruction of the `ONCHAIN_INVEST` payload. Keep it naive
@@ -316,6 +330,16 @@ fn test_get_amount_in_out() {
     assert_eq!(s.factory.get_amount_in(&id, &100), 1100);
     // Exact round trip back to the shares that produced it.
     assert_eq!(s.factory.get_amount_out(&id, &1100), 100);
+
+    // EURC is taken at par with EUR: 100 shares * 1 EUR = 1000 base units of
+    // the 7-decimal EURC, and back.
+    assert_eq!(s.factory.get_amount_in_eur(&id, &100), 1000);
+    assert_eq!(s.factory.get_amount_out_eur(&id, &1000), 100);
+
+    // A moved EUR/USD rate moves the USDC quotes only.
+    s.oracle.set_price(&120_000_000_000_000);
+    assert_eq!(s.factory.get_amount_out(&id, &1200), 100);
+    assert_eq!(s.factory.get_amount_out_eur(&id, &1000), 100);
 }
 
 /// AUDIT Factory C13: an order that rounds to zero fails instead of being
@@ -345,6 +369,11 @@ fn test_order_rounding_to_zero_fails() {
     // The other direction: 1 base unit of 7-decimal USDC buys no share unit.
     let (normal, _) = create_op(&s, 1000);
     assert_eq!(s.factory.try_get_amount_out(&normal, &1).err(), too_small);
+    // Same for 1 base unit of 7-decimal EURC.
+    assert_eq!(
+        s.factory.try_get_amount_out_eur(&normal, &1).err(),
+        too_small
+    );
 
     // EURC follows the same rule: 1e-12 EUR is less than 1e-7 EURC.
     assert_eq!(s.factory.try_get_amount_in_eur(&id, &1).err(), too_small);
@@ -362,9 +391,9 @@ fn test_order_rounding_to_zero_fails() {
 /// fails the quote instead of silently pricing with a guessed 6 decimals.
 #[test]
 fn test_missing_decimals_fail_instead_of_defaulting() {
-    use crate::types::DataKey;
+    use crate::types::{Coin, DataKey};
 
-    for key in [DataKey::UsdcDecimals, DataKey::OracleDecimals] {
+    for key in [DataKey::TokenDecimals(Coin::Usdc), DataKey::OracleDecimals] {
         let s = setup();
         let (id, _) = create_op(&s, 1000);
         s.e.as_contract(&s.factory_id, || {
@@ -380,7 +409,9 @@ fn test_missing_decimals_fail_instead_of_defaulting() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
     s.e.as_contract(&s.factory_id, || {
-        s.e.storage().instance().remove(&DataKey::EurcDecimals);
+        s.e.storage()
+            .instance()
+            .remove(&DataKey::TokenDecimals(Coin::Eurc));
     });
     assert_eq!(
         s.factory.try_get_amount_in_eur(&id, &100),
@@ -791,7 +822,7 @@ fn test_refund_takes_admin_decided_shares_and_usdc() {
 }
 
 #[test]
-fn test_withdraw_usdc_after_finish() {
+fn test_withdraw_funds_after_finish() {
     let s = setup();
     let (id, _) = create_op(&s, 100);
     s.factory.start_operation(&id);
@@ -805,10 +836,10 @@ fn test_withdraw_usdc_after_finish() {
     assert!(s.factory.is_operation_finished(&id));
 
     let dest = Address::generate(&s.e);
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     assert_eq!(usdc_tok.balance(&dest), 1100);
-    assert!(s.factory.usdc_withdrawn(&id));
+    assert!(s.factory.funds_withdrawn(&id));
 }
 
 fn invest_as(s: &Setup, id: u32, user: &Address, shares: i128, nonce: &str) {
@@ -842,7 +873,7 @@ fn test_operation_finished_reports_six_decimal_euros() {
 /// Withdrawal no longer waits for the end of the sale; each call takes only
 /// what was raised since the previous one.
 #[test]
-fn test_withdraw_usdc_during_sale_is_incremental() {
+fn test_withdraw_funds_during_sale_is_incremental() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
     s.factory.start_operation(&id);
@@ -853,18 +884,18 @@ fn test_withdraw_usdc_during_sale_is_incremental() {
 
     invest_as(&s, id, &user, 100, "n1");
     assert!(!s.factory.is_operation_finished(&id));
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     assert_eq!(usdc_tok.balance(&dest), 1100);
     assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
-    assert!(s.factory.usdc_withdrawn(&id));
+    assert!(s.factory.funds_withdrawn(&id));
     assert_eq!(
-        s.factory.try_withdraw_usdc(&id, &dest),
+        s.factory.try_withdraw_funds(&id, &dest),
         Err(Ok(Error::NothingToWithdraw.into()))
     );
 
     // The sale is still open after a withdrawal.
     invest_as(&s, id, &user, 50, "n2");
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     assert_eq!(usdc_tok.balance(&dest), 1650);
     assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1650);
     assert_eq!(s.factory.usdc_raised(&id), 1650);
@@ -872,20 +903,20 @@ fn test_withdraw_usdc_during_sale_is_incremental() {
 }
 
 #[test]
-fn test_withdraw_usdc_before_start_fails() {
+fn test_withdraw_funds_before_start_fails() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
     assert_eq!(
-        s.factory.try_withdraw_usdc(&id, &Address::generate(&s.e)),
+        s.factory.try_withdraw_funds(&id, &Address::generate(&s.e)),
         Err(Ok(Error::OperationNotStarted.into()))
     );
 }
 
-/// AUDIT Factory C18: raised USDC cannot be withdrawn to the factory itself
+/// AUDIT Factory C18: raised funds cannot be withdrawn to the factory itself
 /// (it would count as withdrawn yet stay stranded in the shared balance) or to
 /// the all-zero account / contract ids, Stellar's `address(0)`.
 #[test]
-fn test_withdraw_usdc_rejects_stranding_destinations() {
+fn test_withdraw_funds_rejects_stranding_destinations() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
     s.factory.start_operation(&id);
@@ -894,7 +925,7 @@ fn test_withdraw_usdc_rejects_stranding_destinations() {
     invest_as(&s, id, &user, 100, "n1");
 
     assert_eq!(
-        s.factory.try_withdraw_usdc(&id, &s.factory_id),
+        s.factory.try_withdraw_funds(&id, &s.factory_id),
         Err(Ok(Error::SelfTargetNotAllowed.into()))
     );
     for zero in [
@@ -903,23 +934,25 @@ fn test_withdraw_usdc_rejects_stranding_destinations() {
     ] {
         assert_eq!(
             s.factory
-                .try_withdraw_usdc(&id, &Address::from_str(&s.e, zero)),
+                .try_withdraw_funds(&id, &Address::from_str(&s.e, zero)),
             Err(Ok(Error::ZeroAddressNotAllowed.into()))
         );
     }
     assert_eq!(s.factory.usdc_withdrawn_amount(&id), 0);
 
     let dest = Address::generate(&s.e);
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
 }
 
 /// The factory pools every operation's USDC in one balance, so a refund on an
 /// operation whose funds were already withdrawn must not be paid out of
-/// another operation's escrow.
+/// another operation's escrow. The admin's own wallet pays it instead, in
+/// full, when it holds enough; otherwise it fails with `InsufficientEscrow`.
 #[test]
 fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
     let s = setup();
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     let (a, _) = create_op(&s, 1000);
     let (b, _) = create_op(&s, 1000);
     s.factory.start_operation(&a);
@@ -932,18 +965,56 @@ fn test_refund_after_early_withdraw_cannot_drain_other_operation() {
     }
 
     invest_as(&s, a, &early, 100, "a1");
-    s.factory.withdraw_usdc(&a, &Address::generate(&s.e));
+    s.factory.withdraw_funds(&a, &Address::generate(&s.e));
     invest_as(&s, a, &late, 10, "a2");
     invest_as(&s, b, &other, 100, "b1");
 
+    // Escrow of `a` holds 110, and the admin's wallet one unit short of 1100.
+    let insufficient = Err(Ok(Error::InsufficientEscrow.into()));
     assert_eq!(
         s.factory.try_refund_user(&a, &early, &100, &1100, &0),
-        Err(Ok(Error::InsufficientEscrow.into()))
+        insufficient
     );
-    // Money invested after the withdrawal is still escrowed and refundable.
+    s.usdc.mint(&s.admin, &1099);
+    assert_eq!(
+        s.factory.try_refund_user(&a, &early, &100, &1100, &0),
+        insufficient
+    );
+
+    // With enough, the admin pays all of it; the escrow is left as it was.
+    s.usdc.mint(&s.admin, &1);
+    s.factory.refund_user(&a, &early, &100, &1100, &0);
+    // The admin's signature on `refund_user` must cover the nested transfer
+    // out of its wallet.
+    let (who, tree) = s.e.auths().into_iter().next().unwrap();
+    assert_eq!(who, s.admin);
+    assert!(tree.sub_invocations.iter().any(|sub| matches!(
+        &sub.function,
+        soroban_sdk::testutils::AuthorizedFunction::Contract((token, f, _))
+            if *token == s.usdc_addr && *f == Symbol::new(&s.e, "transfer")
+    )));
+    let expected = crate::events::Refunded {
+        investor: early.clone(),
+        operation_id: a,
+        usdc_amount: 1100,
+        eurc_amount: 0,
+        shares_refunded: 100,
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
+    assert_eq!(usdc_tok.balance(&early), 10_000);
+    assert_eq!(usdc_tok.balance(&s.admin), 0);
+    assert_eq!(s.factory.usdc_raised(&a), 1210);
+    assert_eq!(s.factory.funding_progress(&a), 10);
+
+    // Money invested after the withdrawal is still escrowed and refundable,
+    // from the escrow, whatever the admin holds.
+    s.usdc.mint(&s.admin, &500);
     s.factory.refund_user(&a, &late, &10, &110, &0);
-    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     assert_eq!(usdc_tok.balance(&late), 10_000);
+    assert_eq!(usdc_tok.balance(&s.admin), 500);
+    assert_eq!(s.factory.usdc_raised(&a), 1100);
     assert_eq!(usdc_tok.balance(&s.factory_id), 1100); // operation b, intact
 }
 
@@ -964,13 +1035,18 @@ fn test_canceled_blocks_invest() {
     );
 }
 
+/// Every per-operation read fails the same way for an unknown id, whichever
+/// coin it is about (EURC reads used to answer 0).
 #[test]
 fn test_get_operation_nonexistent() {
     let s = setup();
-    assert_eq!(
-        s.factory.try_get_operation(&99).err(),
-        Some(Ok(Error::OperationNotFound.into()))
-    );
+    let not_found = Some(Ok(Error::OperationNotFound.into()));
+    assert_eq!(s.factory.try_get_operation(&99).err(), not_found);
+    assert_eq!(s.factory.try_usdc_raised(&99).err(), not_found);
+    assert_eq!(s.factory.try_eurc_raised(&99).err(), not_found);
+    assert_eq!(s.factory.try_usdc_withdrawn_amount(&99).err(), not_found);
+    assert_eq!(s.factory.try_eurc_withdrawn_amount(&99).err(), not_found);
+    assert_eq!(s.factory.try_funds_withdrawn(&99).err(), not_found);
 }
 
 /// The batch paths accumulate into one in-memory `OpData` and write it once, so
@@ -1032,7 +1108,6 @@ fn test_flags_are_independent() {
     assert!(s.factory.operation_started(&id));
     assert!(s.factory.funding_paused(&id));
     assert!(!s.factory.operation_canceled(&id));
-    assert!(!s.factory.usdc_withdrawn(&id));
 
     let user = Address::generate(&s.e);
     s.usdc.mint(&user, &10_000);
@@ -1197,7 +1272,7 @@ fn test_invest_refused_while_usdc_off_peg() {
     .into_iter()
     .enumerate()
     {
-        s.usdc_oracle.set_price(&price);
+        s.stablecoin_oracle.set_price(&price);
         assert_eq!(
             try_buy(&std::format!("off-{i}")),
             Some(Ok(Error::UsdcOffPeg.into()))
@@ -1218,7 +1293,7 @@ fn test_invest_refused_while_usdc_off_peg() {
         .into_iter()
         .enumerate()
     {
-        s.usdc_oracle.set_price(&price);
+        s.stablecoin_oracle.set_price(&price);
         assert_eq!(try_buy(&std::format!("edge-{i}")), None);
     }
     assert_eq!(s.factory.funding_progress(&id), 60);
@@ -1331,17 +1406,18 @@ fn test_non_round_rate_is_charged_as_quoted() {
     assert_eq!(s.factory.usdc_raised(&id), 10_834_560 + 3_611_516);
 }
 
-/// Every way the EUR/USD feed can fail stops both purchase paths and both
-/// quotes; a USDC/USD feed failure stops `invest` (the only path that reads
-/// it). A price exactly 24 h old is still accepted.
+/// Every way the EUR/USD feed can fail stops all three purchase paths and the
+/// USDC quotes; a stablecoin feed failure stops `invest` and `invest_eur` (the
+/// paths with a depeg check). The EURC quote reads no feed. A price exactly
+/// 24 h old is still accepted.
 #[test]
 fn test_oracle_failures_block_purchases_and_quotes() {
-    type Break = fn(&MockFeedClient);
+    type Break = fn(&MockFeedClient, &Symbol);
     let failures: [(Break, Error); 4] = [
-        (|f| f.remove_price(), Error::OracleNoPrice),
-        (|f| f.set_price(&0), Error::OracleInvalidPrice),
-        (|f| f.set_price(&-1), Error::OracleInvalidPrice),
-        (|f| f.set_age(&86_401), Error::OracleStalePrice),
+        (|f, _| f.remove_price(), Error::OracleNoPrice),
+        (|f, s| f.set_price_of(s, &0), Error::OracleInvalidPrice),
+        (|f, s| f.set_price_of(s, &-1), Error::OracleInvalidPrice),
+        (|f, _| f.set_age(&86_401), Error::OracleStalePrice),
     ];
 
     for (break_feed, expected) in failures {
@@ -1351,15 +1427,24 @@ fn test_oracle_failures_block_purchases_and_quotes() {
         let user = Address::generate(&s.e);
         let holder = Address::generate(&s.e);
         s.usdc.mint(&user, &10_000);
+        s.eurc.mint(&user, &10_000);
         let expected = Some(Ok(expected.into()));
         let try_invest = |nonce: &str| {
             let nonce = String::from_str(&s.e, nonce);
             let sig = sign_invest(&s.e, &s.factory_id, id, &user, 10, &nonce);
             s.factory.try_invest(&user, &id, &10, &nonce, &sig).err()
         };
+        let try_invest_eur = |nonce: &str| {
+            let nonce = String::from_str(&s.e, nonce);
+            let sig = sign_invest(&s.e, &s.factory_id, id, &user, 10, &nonce);
+            s.factory
+                .try_invest_eur(&user, &id, &10, &nonce, &sig)
+                .err()
+        };
 
-        break_feed(&s.oracle);
+        break_feed(&s.oracle, &symbol_short!("EUR"));
         assert_eq!(try_invest("eur"), expected);
+        assert_eq!(try_invest_eur("eur-e"), expected);
         let nonce = String::from_str(&s.e, "fiat");
         let sig = sign_fiat_invest(
             &s.e,
@@ -1378,12 +1463,16 @@ fn test_oracle_failures_block_purchases_and_quotes() {
         );
         assert_eq!(s.factory.try_get_amount_in(&id, &10).err(), expected);
         assert_eq!(s.factory.try_get_amount_out(&id, &110).err(), expected);
+        assert_eq!(s.factory.get_amount_in_eur(&id, &10), 100);
 
-        // Restore the EUR feed; break the USDC one instead.
+        // Restore the EUR feed; break the stablecoin one instead.
         s.oracle.set_price(&110_000_000_000_000);
         s.oracle.set_age(&0);
-        break_feed(&s.usdc_oracle);
+        for coin in [symbol_short!("USDC"), symbol_short!("EURC")] {
+            break_feed(&s.stablecoin_oracle, &coin);
+        }
         assert_eq!(try_invest("usdc"), expected);
+        assert_eq!(try_invest_eur("eurc"), expected);
         assert_eq!(s.factory.get_amount_in(&id, &10), 110);
         assert_eq!(s.factory.funding_progress(&id), 0);
     }
@@ -1391,7 +1480,7 @@ fn test_oracle_failures_block_purchases_and_quotes() {
     let s = setup();
     let (id, _) = create_op(&s, 1000);
     s.oracle.set_age(&86_400);
-    s.usdc_oracle.set_age(&86_400);
+    s.stablecoin_oracle.set_age(&86_400);
     assert_eq!(s.factory.get_amount_in(&id, &10), 110);
 }
 
@@ -1683,9 +1772,65 @@ fn test_invest_eur_ignores_the_usdc_peg() {
     let user = Address::generate(&s.e);
     s.eurc.mint(&user, &10_000);
 
-    s.usdc_oracle.set_price(&90_000_000_000_000); // 0.90
+    s.stablecoin_oracle.set_price(&90_000_000_000_000); // USDC at 0.90
     invest_eur_as(&s, id, &user, 100, "e1");
     assert_eq!(s.factory.eurc_raised(&id), 1000);
+}
+
+/// Like USDC (AUDIT Factory C4), EURC is refused while it trades outside
+/// [0.98, 1.02] EUR (bounds included as on-peg), measured as its USD price
+/// over EUR/USD. USDC purchases are not affected, and EURC following a moved
+/// EUR/USD rate is no depeg.
+#[test]
+fn test_invest_eur_refused_while_eurc_off_peg() {
+    let s = setup();
+    let (id, _) = create_op(&s, 1000);
+    s.factory.start_operation(&id);
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    s.eurc.mint(&user, &10_000);
+    let eurc = symbol_short!("EURC");
+    let try_buy = |nonce: &str| {
+        let nonce = String::from_str(&s.e, nonce);
+        let sig = sign_invest(&s.e, &s.factory_id, id, &user, 10, &nonce);
+        s.factory
+            .try_invest_eur(&user, &id, &10, &nonce, &sig)
+            .err()
+    };
+
+    // EUR/USD is 1.1, so EURC at 1.0758 / 1.1222 USD is 0.978 / 1.0202 EUR.
+    for (i, price) in [107_580_000_000_000_i128, 112_220_000_000_000]
+        .into_iter()
+        .enumerate()
+    {
+        s.stablecoin_oracle.set_price_of(&eurc, &price);
+        assert_eq!(
+            try_buy(&std::format!("off-{i}")),
+            Some(Ok(Error::EurcOffPeg.into()))
+        );
+    }
+    assert_eq!(s.factory.funding_progress(&id), 0);
+
+    // USDC still sells during an EURC depeg.
+    invest_as(&s, id, &user, 10, "usdc");
+
+    // The band edges are on-peg: 1.078 and 1.122 USD are 0.98 and 1.02 EUR.
+    for (i, price) in [107_800_000_000_000_i128, 112_200_000_000_000]
+        .into_iter()
+        .enumerate()
+    {
+        s.stablecoin_oracle.set_price_of(&eurc, &price);
+        assert_eq!(try_buy(&std::format!("edge-{i}")), None);
+    }
+
+    // EUR/USD moves to 1.2 and EURC with it: still 1 EUR.
+    s.oracle.set_price(&120_000_000_000_000);
+    s.stablecoin_oracle
+        .set_price_of(&eurc, &120_000_000_000_000);
+    assert_eq!(try_buy("moved"), None);
+
+    assert_eq!(s.factory.funding_progress(&id), 40);
+    assert_eq!(s.factory.eurc_raised(&id), 300);
 }
 
 /// `invest_eur` takes the existing `ONCHAIN_INVEST` signature, so one backend
@@ -1708,8 +1853,8 @@ fn test_invest_eur_shares_nonces_with_invest() {
     );
 }
 
-/// `withdraw_usdc` sends each token of a mixed raise as itself. An EURC-only
-/// withdrawal leaves `usdc_withdrawn` unset.
+/// `withdraw_funds` sends each coin of a mixed raise as itself. An EURC-only
+/// withdrawal counts as a withdrawal of the operation's funds.
 #[test]
 fn test_withdraw_mixed_raise_sends_both_tokens() {
     let s = setup();
@@ -1733,24 +1878,25 @@ fn test_withdraw_mixed_raise_sends_both_tokens() {
     };
 
     invest_eur_as(&s, id, &user, 100, "e1");
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     assert!(withdrawn(0, 1000));
     assert_eq!(eurc_tok.balance(&dest), 1000);
-    assert!(!s.factory.usdc_withdrawn(&id));
+    assert!(s.factory.funds_withdrawn(&id));
+    assert_eq!(s.factory.usdc_withdrawn_amount(&id), 0);
 
     invest_as(&s, id, &user, 100, "u1");
     invest_eur_as(&s, id, &user, 50, "e2");
-    s.factory.withdraw_usdc(&id, &dest);
+    s.factory.withdraw_funds(&id, &dest);
     assert!(withdrawn(1100, 500));
     assert_eq!(usdc_tok.balance(&dest), 1100);
     assert_eq!(eurc_tok.balance(&dest), 1500);
     assert_eq!(s.factory.usdc_withdrawn_amount(&id), 1100);
     assert_eq!(s.factory.eurc_withdrawn_amount(&id), 1500);
-    assert!(s.factory.usdc_withdrawn(&id));
+    assert!(s.factory.funds_withdrawn(&id));
     assert_eq!(usdc_tok.balance(&s.factory_id), 0);
     assert_eq!(eurc_tok.balance(&s.factory_id), 0);
     assert_eq!(
-        s.factory.try_withdraw_usdc(&id, &dest),
+        s.factory.try_withdraw_funds(&id, &dest),
         Err(Ok(Error::NothingToWithdraw.into()))
     );
 }
@@ -1820,11 +1966,13 @@ fn test_refund_mixed_raise_returns_each_token() {
     assert_eq!(eurc_tok.balance(&s.factory_id), 0);
 }
 
-/// EURC of every operation sits in one balance, exactly like USDC.
+/// EURC of every operation sits in one balance, exactly like USDC, and falls
+/// back on the admin's EURC the same way.
 #[test]
 fn test_eurc_refund_after_withdraw_cannot_drain_other_operation() {
     let s = setup();
     let eurc_tok = soroban_sdk::token::Client::new(&s.e, &s.eurc_addr);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
     let (a, _) = create_op(&s, 1000);
     let (b, _) = create_op(&s, 1000);
     s.factory.start_operation(&a);
@@ -1837,14 +1985,23 @@ fn test_eurc_refund_after_withdraw_cannot_drain_other_operation() {
     }
 
     invest_eur_as(&s, a, &early, 100, "a1");
-    s.factory.withdraw_usdc(&a, &Address::generate(&s.e));
+    s.factory.withdraw_funds(&a, &Address::generate(&s.e));
     invest_eur_as(&s, a, &late, 10, "a2");
     invest_eur_as(&s, b, &other, 100, "b1");
 
+    // The admin's USDC does not cover an EURC refund.
+    s.usdc.mint(&s.admin, &10_000);
     assert_eq!(
         s.factory.try_refund_user(&a, &early, &100, &0, &1000),
         Err(Ok(Error::InsufficientEscrow.into()))
     );
+    s.eurc.mint(&s.admin, &1000);
+    s.factory.refund_user(&a, &early, &100, &0, &1000);
+    assert_eq!(eurc_tok.balance(&early), 10_000);
+    assert_eq!(eurc_tok.balance(&s.admin), 0);
+    assert_eq!(usdc_tok.balance(&s.admin), 10_000);
+    assert_eq!(s.factory.eurc_raised(&a), 1100);
+
     // EURC invested after the withdrawal is still escrowed and refundable.
     s.factory.refund_user(&a, &late, &10, &0, &100);
     assert_eq!(eurc_tok.balance(&late), 10_000);

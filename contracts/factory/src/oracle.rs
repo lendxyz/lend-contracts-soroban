@@ -5,16 +5,18 @@ use soroban_sdk::{
 
 use crate::errors::Error;
 use crate::storage as st;
-use crate::types::DataKey;
+use crate::types::{Coin, DataKey};
 
 pub const PRICE_PRECISION: i128 = 1_000_000; // 1e6
 const MAX_PRICE_AGE: u64 = 86_400; // 24h in seconds
 
-/// USDC/USD band (6 decimals, inclusive) within which USDC purchases are
-/// accepted. Shares are priced as if 1 USDC were 1 USD, so outside it the
-/// factory would sell euro-priced shares for USDC worth less than it assumes.
-const USDC_PEG_MIN: i128 = 980_000; // 0.98
-const USDC_PEG_MAX: i128 = 1_020_000; // 1.02
+/// Band (6 decimals, inclusive) within which a coin's value in its reference
+/// currency (USD for USDC, EUR for EURC) must stay for purchases in it to be
+/// accepted. Shares are priced as if 1 USDC were 1 USD and 1 EURC were 1 EUR,
+/// so outside it the factory would sell euro-priced shares for tokens worth
+/// less than it assumes.
+const PEG_MIN: i128 = 980_000; // 0.98
+const PEG_MAX: i128 = 1_020_000; // 1.02
 
 /// Reflector SEP-40 asset selector.
 #[contracttype(export = false)]
@@ -44,14 +46,14 @@ pub fn set_oracle(e: &Env, oracle: &Address) {
     store_feed(e, oracle, &DataKey::Oracle, &DataKey::OracleDecimals);
 }
 
-/// Stores the USDC/USD oracle (Reflector CEX & DEX feed, which prices `USDC`
-/// in USD; the forex feed does not) and caches its decimals.
-pub fn set_usdc_oracle(e: &Env, oracle: &Address) {
+/// Stores the stablecoin oracle (Reflector CEX & DEX feed, which prices `USDC`
+/// and `EURC` in USD; the forex feed has neither) and caches its decimals.
+pub fn set_stablecoin_oracle(e: &Env, oracle: &Address) {
     store_feed(
         e,
         oracle,
-        &DataKey::UsdcOracle,
-        &DataKey::UsdcOracleDecimals,
+        &DataKey::StablecoinOracle,
+        &DataKey::StablecoinOracleDecimals,
     );
 }
 
@@ -77,17 +79,34 @@ pub fn get_eur_usd_price(e: &Env) -> i128 {
     )
 }
 
-/// Fails with `UsdcOffPeg` unless USDC trades within
-/// [`USDC_PEG_MIN`, `USDC_PEG_MAX`] USD on the USDC oracle.
-pub fn require_usdc_pegged(e: &Env) {
-    let price = read_price(
+/// `coin`'s USD price from the stablecoin oracle, 6 decimals.
+fn stablecoin_usd_price(e: &Env, coin: Coin) -> i128 {
+    let symbol = match coin {
+        Coin::Usdc => symbol_short!("USDC"),
+        Coin::Eurc => symbol_short!("EURC"),
+    };
+    read_price(
         e,
-        &DataKey::UsdcOracle,
-        &DataKey::UsdcOracleDecimals,
-        symbol_short!("USDC"),
-    );
-    if !(USDC_PEG_MIN..=USDC_PEG_MAX).contains(&price) {
-        panic_with_error!(e, Error::UsdcOffPeg);
+        &DataKey::StablecoinOracle,
+        &DataKey::StablecoinOracleDecimals,
+        symbol,
+    )
+}
+
+/// Fails unless `coin` trades within [`PEG_MIN`, `PEG_MAX`] of its reference
+/// currency: USDC/USD straight from the stablecoin oracle, EURC/EUR as its
+/// USD price over the EUR/USD forex rate.
+pub fn require_pegged(e: &Env, coin: Coin) {
+    let (value, error) = match coin {
+        Coin::Usdc => (stablecoin_usd_price(e, coin), Error::UsdcOffPeg),
+        Coin::Eurc => (
+            stablecoin_usd_price(e, coin) * PRICE_PRECISION
+                / get_eur_usd_price(e),
+            Error::EurcOffPeg,
+        ),
+    };
+    if !(PEG_MIN..=PEG_MAX).contains(&value) {
+        panic_with_error!(e, error);
     }
 }
 
@@ -138,61 +157,27 @@ fn scale_to_6(price: i128, decimals: u32) -> i128 {
     }
 }
 
-/// Scale of one whole USDC in the token's own base units. Internal pricing is
+/// Scale of one whole `coin` in its token's base units. Internal pricing is
 /// 6-decimal throughout (`eur_per_share`, the oracle price, shares); only the
 /// leg that actually moves tokens is denominated in the token's decimals.
-fn usdc_precision(e: &Env) -> i128 {
-    10i128.pow(st::usdc_decimals(e))
+fn precision(e: &Env, coin: Coin) -> i128 {
+    10i128.pow(st::token_decimals(e, coin))
 }
 
-/// USDC cost for `shares_amount` shares of an operation priced at
-/// `eur_per_share`, in USDC base units.
-pub fn amount_in(e: &Env, eur_per_share: i128, shares_amount: i128) -> i128 {
-    if shares_amount <= 0 {
-        panic_with_error!(e, Error::InvalidShares);
+/// Price of 1 EUR in `coin`, 6 decimals: the EUR/USD rate for USDC (taken as
+/// 1 USD), and par for EURC (taken as 1 EUR, so no oracle leg).
+fn eur_rate(e: &Env, coin: Coin) -> i128 {
+    match coin {
+        Coin::Usdc => get_eur_usd_price(e),
+        Coin::Eurc => PRICE_PRECISION,
     }
-    let shares_price_eur = eur_per_share * shares_amount / PRICE_PRECISION;
-    // 6-decimal EUR * 6-decimal USD/EUR = 12 decimals. Rescaling straight into
-    // the token's precision in one divide keeps every digit a 7-decimal USDC can
-    // hold, instead of rounding to 1e-6 first and multiplying the loss back up.
-    let usdc_cost = shares_price_eur * get_eur_usd_price(e) * usdc_precision(e)
-        / (PRICE_PRECISION * PRICE_PRECISION);
-    // A non-positive cost means the order rounds to nothing; minting shares
-    // for it would give them away.
-    if usdc_cost <= 0 {
-        panic_with_error!(e, Error::AmountTooSmall);
-    }
-    usdc_cost
 }
 
-/// Shares obtainable for `usdc_amount` USDC base units at `eur_per_share`.
-pub fn amount_out(e: &Env, eur_per_share: i128, usdc_amount: i128) -> i128 {
-    if usdc_amount <= 0 {
-        panic_with_error!(e, Error::InvalidAmount);
-    }
-    // Token base units -> 6-decimal USDC, before the 6-decimal share math.
-    let usdc_6 = usdc_amount * PRICE_PRECISION / usdc_precision(e);
-    // 6-decimal USDC over a 12-decimal divisor (6-decimal EUR/share × 6-decimal
-    // USD/EUR): two PRICE_PRECISION factors bring the quotient back to
-    // 6-decimal shares.
-    let shares = usdc_6 * PRICE_PRECISION * PRICE_PRECISION
-        / (eur_per_share * get_eur_usd_price(e));
-    if shares <= 0 {
-        panic_with_error!(e, Error::AmountTooSmall);
-    }
-    shares
-}
-
-/// Scale of one whole EURC in the token's own base units.
-fn eurc_precision(e: &Env) -> i128 {
-    10i128.pow(st::eurc_decimals(e))
-}
-
-/// EURC cost for `shares_amount` shares of an operation priced at
-/// `eur_per_share`, in EURC base units. Shares are priced in EUR, so unlike
-/// [`amount_in`] there is no oracle leg.
-pub fn eurc_amount_in(
+/// Cost of `shares_amount` shares of an operation priced at `eur_per_share`,
+/// in `coin` base units.
+pub fn amount_in(
     e: &Env,
+    coin: Coin,
     eur_per_share: i128,
     shares_amount: i128,
 ) -> i128 {
@@ -200,18 +185,52 @@ pub fn eurc_amount_in(
         panic_with_error!(e, Error::InvalidShares);
     }
     let shares_price_eur = eur_per_share * shares_amount / PRICE_PRECISION;
-    let eurc_cost = shares_price_eur * eurc_precision(e) / PRICE_PRECISION;
-    // Same rule as `amount_in`: an order that rounds to nothing is refused,
-    // not sold for one base unit.
-    if eurc_cost <= 0 {
+    // 6-decimal EUR * 6-decimal coin/EUR = 12 decimals. Rescaling straight
+    // into the token's precision in one divide keeps every digit a 7-decimal
+    // token can hold, instead of rounding to 1e-6 first and multiplying the
+    // loss back up.
+    let cost = shares_price_eur * eur_rate(e, coin) * precision(e, coin)
+        / (PRICE_PRECISION * PRICE_PRECISION);
+    // A non-positive cost means the order rounds to nothing; minting shares
+    // for it would give them away.
+    if cost <= 0 {
         panic_with_error!(e, Error::AmountTooSmall);
     }
-    eurc_cost
+    cost
 }
 
-/// USD value of `eurc_amount` EURC base units at the current EUR/USD rate, in
-/// USDC base units: what `Invested.usdc_amount` reports for an EURC purchase.
-pub fn eurc_to_usdc(e: &Env, eurc_amount: i128) -> i128 {
-    eurc_amount * get_eur_usd_price(e) * usdc_precision(e)
-        / (eurc_precision(e) * PRICE_PRECISION)
+/// Shares obtainable for `amount` `coin` base units at `eur_per_share`.
+pub fn amount_out(
+    e: &Env,
+    coin: Coin,
+    eur_per_share: i128,
+    amount: i128,
+) -> i128 {
+    if amount <= 0 {
+        panic_with_error!(e, Error::InvalidAmount);
+    }
+    // Token base units -> 6 decimals, before the 6-decimal share math.
+    let amount_6 = amount * PRICE_PRECISION / precision(e, coin);
+    // 6-decimal coin over a 12-decimal divisor (6-decimal EUR/share ×
+    // 6-decimal coin/EUR): two PRICE_PRECISION factors bring the quotient
+    // back to 6-decimal shares.
+    let shares = amount_6 * PRICE_PRECISION * PRICE_PRECISION
+        / (eur_per_share * eur_rate(e, coin));
+    if shares <= 0 {
+        panic_with_error!(e, Error::AmountTooSmall);
+    }
+    shares
+}
+
+/// USD value of `amount` `coin` base units, in USDC base units: what
+/// `Invested.usdc_amount` reports. USDC is taken at par; EURC is converted at
+/// the current EUR/USD rate.
+pub fn usd_value(e: &Env, coin: Coin, amount: i128) -> i128 {
+    match coin {
+        Coin::Usdc => amount,
+        Coin::Eurc => {
+            amount * get_eur_usd_price(e) * precision(e, Coin::Usdc)
+                / (precision(e, coin) * PRICE_PRECISION)
+        }
+    }
 }

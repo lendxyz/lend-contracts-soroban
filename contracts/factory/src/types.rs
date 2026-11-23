@@ -36,13 +36,51 @@ pub struct RefundEntry {
     pub eurc_to_refund: i128,
 }
 
+/// The stablecoins an operation is funded with on-chain: USDC through
+/// `invest`, EURC through `invest_eur`. Each has its own escrow and records,
+/// always in its own token's base units.
+#[contracttype(export = false)]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Coin {
+    Usdc,
+    Eurc,
+}
+
+impl Coin {
+    pub const ALL: [Coin; 2] = [Coin::Usdc, Coin::Eurc];
+}
+
 // `OpData::flags` bits.
 pub const F_STARTED: u32 = 1 << 0;
 pub const F_CANCELED: u32 = 1 << 1;
 pub const F_PAUSED: u32 = 1 << 2;
-/// Set on the first `withdraw_usdc` that sends USDC; the amount lives under
-/// `DataKey::UsdcWithdrawn`. EURC withdrawals do not touch it.
-pub const F_WITHDRAWN: u32 = 1 << 3;
+
+/// One coin's escrow for an operation, in that coin's base units.
+///
+/// Invariant: `raised >= withdrawn`. Refunds take at most
+/// [`Escrow::available`] off `raised`, and a withdrawal sets `withdrawn` to
+/// `raised`.
+#[contracttype(export = false)]
+#[derive(Clone)]
+pub struct Escrow {
+    /// Paid in, net of refunds.
+    pub raised: i128,
+    /// Cumulative amount sent out by `withdraw_funds`.
+    pub withdrawn: i128,
+}
+
+impl Escrow {
+    pub const ZERO: Escrow = Escrow {
+        raised: 0,
+        withdrawn: 0,
+    };
+
+    /// Still held by the factory for this operation: what a refund or the
+    /// next withdrawal can take. Never negative (see the invariant).
+    pub fn available(&self) -> i128 {
+        self.raised - self.withdrawn
+    }
+}
 
 /// Everything a funding path needs, in a single ledger entry.
 ///
@@ -58,9 +96,10 @@ pub struct OpData {
     pub total_shares: i128,
     pub eur_per_share: i128,
     pub funding_progress: i128,
-    pub usdc_raised: i128,
-    /// Bit set of `F_*`; four booleans as four map fields would be rewritten
-    /// on every invest.
+    pub usdc: Escrow,
+    pub eurc: Escrow,
+    /// Bit set of `F_*`; three booleans as three map fields would be
+    /// rewritten on every invest.
     pub flags: u32,
 }
 
@@ -74,6 +113,20 @@ impl OpData {
             self.flags |= f;
         } else {
             self.flags &= !f;
+        }
+    }
+
+    pub fn escrow(&self, coin: Coin) -> &Escrow {
+        match coin {
+            Coin::Usdc => &self.usdc,
+            Coin::Eurc => &self.eurc,
+        }
+    }
+
+    pub fn escrow_mut(&mut self, coin: Coin) -> &mut Escrow {
+        match coin {
+            Coin::Usdc => &mut self.usdc,
+            Coin::Eurc => &mut self.eurc,
         }
     }
 
@@ -93,75 +146,56 @@ impl OpData {
     }
 }
 
-/// Per-(operation, user) accounting, in a single ledger entry.
+/// Per-(operation, user) accounting, in a single ledger entry: what the user
+/// paid in with each coin, in that coin's base units. A record, not reduced by
+/// refunds.
 #[contracttype(export = false)]
 #[derive(Clone)]
 pub struct Position {
-    /// USDC paid in by this user. A record, not reduced by refunds.
-    pub invested: i128,
+    pub usdc_invested: i128,
+    pub eurc_invested: i128,
 }
 
 impl Position {
-    pub const ZERO: Position = Position { invested: 0 };
-}
-
-/// EURC side of an operation's escrow, raised by `invest_eur`. Kept out of
-/// [`OpData`] (adding a field there would make every stored `Op` undecodable
-/// after an in-place upgrade) and absent for operations that never took EURC.
-#[contracttype(export = false)]
-#[derive(Clone)]
-pub struct EurcEscrow {
-    /// EURC paid in, net of refunds, in EURC base units.
-    pub raised: i128,
-    /// Cumulative EURC sent out by `withdraw_usdc`.
-    pub withdrawn: i128,
-}
-
-impl EurcEscrow {
-    pub const ZERO: EurcEscrow = EurcEscrow {
-        raised: 0,
-        withdrawn: 0,
+    pub const ZERO: Position = Position {
+        usdc_invested: 0,
+        eurc_invested: 0,
     };
-}
 
-/// EURC side of a [`Position`], kept apart for the same layout reason.
-#[contracttype(export = false)]
-#[derive(Clone)]
-pub struct EurcPosition {
-    /// EURC paid in by this user, in EURC base units. A record, not reduced
-    /// by refunds.
-    pub invested: i128,
-}
+    pub fn invested(&self, coin: Coin) -> i128 {
+        match coin {
+            Coin::Usdc => self.usdc_invested,
+            Coin::Eurc => self.eurc_invested,
+        }
+    }
 
-impl EurcPosition {
-    pub const ZERO: EurcPosition = EurcPosition { invested: 0 };
+    pub fn invested_mut(&mut self, coin: Coin) -> &mut i128 {
+        match coin {
+            Coin::Usdc => &mut self.usdc_invested,
+            Coin::Eurc => &mut self.eurc_invested,
+        }
+    }
 }
 
 #[contracttype(export = false)]
 pub enum DataKey {
     Admin,
-    Usdc,
-    UsdcDecimals,
-    Oracle,
-    OracleDecimals,
     BackendSigner,
     OpLendWasmHash,
     OperationCount,
+    /// A coin's token and its cached decimals, written by the constructor.
+    Token(Coin),
+    TokenDecimals(Coin),
+    /// EUR/USD forex feed, and its cached decimals.
+    Oracle,
+    OracleDecimals,
+    /// Feed pricing USDC and EURC in USD for the depeg checks, and its cached
+    /// decimals.
+    StablecoinOracle,
+    StablecoinOracleDecimals,
     Op(u32),
     OpName(u32),
     Position(u32, Address),
     Blacklisted(Address),
     UsedNonce(String),
-    /// Cumulative USDC withdrawn from an operation. Kept out of [`OpData`]
-    /// because adding a field there would make every already-stored `Op`
-    /// entry undecodable. New variants MUST be appended, never reordered.
-    UsdcWithdrawn(u32),
-    /// USDC/USD oracle for the depeg check, and its cached decimals.
-    UsdcOracle,
-    UsdcOracleDecimals,
-    /// EURC token and its cached decimals, written by the constructor.
-    Eurc,
-    EurcDecimals,
-    EurcEscrow(u32),
-    EurcPosition(u32, Address),
 }

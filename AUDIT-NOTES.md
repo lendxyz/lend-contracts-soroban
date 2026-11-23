@@ -443,3 +443,49 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   reintroduced later as if it had never existed.
 - `set_factory`, the one-shot call made right after that upgrade, now deletes
   the entry. A freshly deployed wallet never has it.
+
+## Factory: EURC depeg check, symmetric USDC / EURC books
+
+- `invest_eur` now refuses EURC while it trades outside [0.98, 1.02] EUR,
+  like `invest` for USDC (Factory C4), with the new error `EurcOffPeg` (26).
+  EURC/EUR is EURC's USD price on the stablecoin feed divided by the EUR/USD
+  forex rate. Both Reflector CEX & DEX feeds list and price `EURC` (checked
+  2026-11-23: about 1.0002 EUR on testnet and mainnet).
+- The `usdc_oracle` constructor argument, its setter and the
+  `scripts/common.sh` variable are renamed `stablecoin_oracle`,
+  `update_stablecoin_oracle_address` and `STABLECOIN_ORACLE`: the feed now
+  prices both coins.
+- `OpData` holds one `Escrow { raised, withdrawn }` per coin, and `Position`
+  holds `usdc_invested` and `eurc_invested`. The `UsdcWithdrawn`,
+  `EurcEscrow` and `EurcPosition` keys are removed, so every per-operation
+  read fails with `OperationNotFound` for an unknown id (EURC reads answered
+  0). Purchases, refunds, withdrawals, pricing and getters share one code path
+  per concern, parameterized by `Coin::Usdc` / `Coin::Eurc`.
+- `withdraw_usdc` is renamed `withdraw_funds` (it sends both coins), and
+  `scripts/withdraw-usdc.sh` / `make withdraw-usdc` follow as
+  `withdraw-funds`.
+- The `F_WITHDRAWN` flag is removed: it was only set by a withdrawal that
+  moved USDC, so after an EURC-only withdrawal it said nothing had been
+  withdrawn. `usdc_withdrawn()` is replaced by `funds_withdrawn()`, derived
+  from the escrows: true once any coin has been withdrawn.
+- Each escrow keeps `raised >= withdrawn` (a refund takes at most what is
+  still held, and a withdrawal sets `withdrawn` to `raised`), so the pending
+  amounts are never negative: `withdraw_funds` drops the `.max(0)` on the
+  amounts it reports, and fails with `NothingToWithdraw` when both are zero.
+- New `get_amount_out_eur(id, eurc_amount)`, the EURC counterpart of
+  `get_amount_out`, so both coins have the same two quotes.
+
+## Factory: refunds fall back on the admin's wallet
+
+- When the operation's escrow cannot cover a coin's refund amount (typically
+  after `withdraw_funds`), `refund_user` / `batch_refund_users` pay that
+  amount in full from the admin's own balance of the coin instead: the
+  admin, who authorizes the refund call, is the sender of the token transfer
+  (its signature must cover that nested transfer). The escrow pays only when
+  it covers the whole amount, so one coin's refund never comes from both, and
+  an admin-paid refund leaves the escrow's `raised` untouched.
+- `InsufficientEscrow` is raised only when neither the escrow nor the admin's
+  balance covers the amount. Each coin is decided on its own, before any
+  shares are burned or tokens moved.
+- The `Refunded` event is unchanged and does not say who paid; the token's own
+  transfer event shows the sender (factory or admin).

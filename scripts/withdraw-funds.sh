@@ -17,8 +17,8 @@
 #   DRY_RUN         1 to simulate only (`--send=no`): nothing is submitted.
 #
 # Usage:
-#   OP_ID=1 DESTINATION=G... ./scripts/withdraw-usdc.sh
-#   DRY_RUN=1 OP_ID=1 DESTINATION=G... ./scripts/withdraw-usdc.sh
+#   OP_ID=1 DESTINATION=G... ./scripts/withdraw-funds.sh
+#   DRY_RUN=1 OP_ID=1 DESTINATION=G... ./scripts/withdraw-funds.sh
 #
 set -euo pipefail
 
@@ -69,7 +69,7 @@ stellar contract invoke \
   "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \
   "${SEND_ARGS[@]}" \
-  -- withdraw_usdc \
+  -- withdraw_funds \
   --id "$OP_ID" \
   --destination "$DESTINATION"
 

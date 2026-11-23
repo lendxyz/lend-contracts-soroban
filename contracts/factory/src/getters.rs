@@ -1,14 +1,10 @@
 use soroban_sdk::{Address, BytesN, Env};
 
 use crate::storage as st;
-use crate::types::{Operation, F_CANCELED, F_PAUSED, F_STARTED, F_WITHDRAWN};
+use crate::types::{Coin, Operation, F_CANCELED, F_PAUSED, F_STARTED};
 
-pub fn usdc(e: &Env) -> Address {
-    st::read_usdc(e)
-}
-
-pub fn eurc(e: &Env) -> Address {
-    st::read_eurc(e)
+pub fn token(e: &Env, coin: Coin) -> Address {
+    st::read_token(e, coin)
 }
 
 pub fn oplend_wasm_hash(e: &Env) -> BytesN<32> {
@@ -37,8 +33,8 @@ pub fn funding_progress(e: &Env, id: u32) -> i128 {
     st::read_op(e, id).funding_progress
 }
 
-pub fn usdc_raised(e: &Env, id: u32) -> i128 {
-    st::read_op(e, id).usdc_raised
+pub fn raised(e: &Env, coin: Coin, id: u32) -> i128 {
+    st::read_op(e, id).escrow(coin).raised
 }
 
 pub fn funding_paused(e: &Env, id: u32) -> bool {
@@ -49,23 +45,16 @@ pub fn operation_started(e: &Env, id: u32) -> bool {
     st::read_op(e, id).flag(F_STARTED)
 }
 
-pub fn usdc_withdrawn(e: &Env, id: u32) -> bool {
-    st::read_op(e, id).flag(F_WITHDRAWN)
+pub fn withdrawn_amount(e: &Env, coin: Coin, id: u32) -> i128 {
+    st::read_op(e, id).escrow(coin).withdrawn
 }
 
-pub fn usdc_withdrawn_amount(e: &Env, id: u32) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_usdc_withdrawn(e, id)
-}
-
-pub fn eurc_raised(e: &Env, id: u32) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_eurc_escrow(e, id).raised
-}
-
-pub fn eurc_withdrawn_amount(e: &Env, id: u32) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_eurc_escrow(e, id).withdrawn
+/// Whether any of the operation's funds, in either coin, has been withdrawn.
+pub fn funds_withdrawn(e: &Env, id: u32) -> bool {
+    let op = st::read_op(e, id);
+    Coin::ALL
+        .into_iter()
+        .any(|coin| op.escrow(coin).withdrawn > 0)
 }
 
 pub fn operation_canceled(e: &Env, id: u32) -> bool {
@@ -76,14 +65,9 @@ pub fn is_operation_finished(e: &Env, id: u32) -> bool {
     st::read_op(e, id).finished()
 }
 
-pub fn usdc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
+pub fn raised_per_client(e: &Env, coin: Coin, id: u32, user: Address) -> i128 {
     st::require_op_exists(e, id);
-    st::read_position(e, id, &user).invested
-}
-
-pub fn eurc_raised_per_client(e: &Env, id: u32, user: Address) -> i128 {
-    st::require_op_exists(e, id);
-    st::read_eurc_position(e, id, &user).invested
+    st::read_position(e, id, &user).invested(coin)
 }
 
 pub fn blacklisted(e: &Env, user: Address) -> bool {

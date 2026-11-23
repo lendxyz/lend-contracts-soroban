@@ -1,46 +1,40 @@
-use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String, Vec};
+use soroban_sdk::{panic_with_error, Address, BytesN, Env, String, Vec};
 
 use crate::errors::Error;
 use crate::events;
-use crate::oracle::{set_oracle, set_usdc_oracle};
+use crate::oracle::{set_oracle, set_stablecoin_oracle};
 use crate::storage as st;
 use crate::types::{
-    DataKey, EurcEscrow, OpData, OpLendClient, RefundEntry, F_STARTED,
-    F_WITHDRAWN,
+    Coin, DataKey, OpData, OpLendClient, RefundEntry, F_STARTED,
 };
 
-/// One operation's escrow (USDC and EURC), read once and written once per
-/// refund call however many users it covers.
+/// One operation, read once and written once per refund call however many
+/// users it covers.
 struct Refunds<'a> {
     id: u32,
     op: OpData,
-    usdc_withdrawn: i128,
-    eurc: EurcEscrow,
-    eurc_raised_before: i128,
     oplend: OpLendClient<'a>,
-    usdc: token::Client<'a>,
+    /// Pays a refund the operation's escrow cannot cover, from its own
+    /// wallet; it authorized the refund call, which covers the transfer.
+    admin: Address,
 }
 
 impl<'a> Refunds<'a> {
-    fn load(e: &'a Env, id: u32) -> Self {
+    fn load(e: &'a Env, id: u32, admin: Address) -> Self {
         let op = st::read_op(e, id);
-        let eurc = st::read_eurc_escrow(e, id);
         Refunds {
             id,
-            usdc_withdrawn: st::read_usdc_withdrawn(e, id),
-            eurc_raised_before: eurc.raised,
-            eurc,
             oplend: OpLendClient::new(e, &op.op_token),
-            usdc: st::usdc_client(e),
             op,
+            admin,
         }
     }
 
     /// Burns `shares_to_burn` of the user's shares and repays `usdc_to_refund`
     /// USDC and `eurc_to_refund` EURC, all decided by the admin. They are not
     /// tied to each other (shares move between holders, euro buyers have no
-    /// token recorded), so none is derived from another or from the
-    /// `invested` records, which are left as the record of what was paid in.
+    /// coin recorded), so none is derived from another or from the `invested`
+    /// records, which are left as the record of what was paid in.
     fn refund(&mut self, e: &Env, entry: RefundEntry) {
         let RefundEntry {
             user,
@@ -48,43 +42,56 @@ impl<'a> Refunds<'a> {
             usdc_to_refund,
             eurc_to_refund,
         } = entry;
+        let refunds =
+            [(Coin::Usdc, usdc_to_refund), (Coin::Eurc, eurc_to_refund)];
 
         if shares_to_burn < 0 {
             panic_with_error!(e, Error::InvalidShares);
         }
-        if usdc_to_refund < 0
-            || eurc_to_refund < 0
+
+        if refunds.iter().any(|&(_, amount)| amount < 0)
             || (shares_to_burn == 0
-                && usdc_to_refund == 0
-                && eurc_to_refund == 0)
+                && refunds.iter().all(|&(_, amount)| amount == 0))
         {
             panic_with_error!(e, Error::InvalidAmount);
         }
         if shares_to_burn > self.oplend.balance(&user) {
             panic_with_error!(e, Error::InsufficientShareBalance);
         }
-        // Each token of every operation sits in one balance: refunding more
+
+        // Each coin of every operation sits in one balance: refunding more
         // than this operation still holds would pay out another operation's
-        // escrow.
-        if usdc_to_refund > self.op.usdc_raised - self.usdc_withdrawn
-            || eurc_to_refund > self.eurc.raised - self.eurc.withdrawn
-        {
-            panic_with_error!(e, Error::InsufficientEscrow);
-        }
+        // escrow. Such a refund is paid in full from the admin's wallet
+        // instead, if it holds enough; the escrow pays only when it covers the
+        // whole amount, so one coin's refund never comes from both.
+        let from_admin = refunds.map(|(coin, amount)| {
+            if amount <= self.op.escrow(coin).available() {
+                return false;
+            }
+            if amount > st::token_client(e, coin).balance(&self.admin) {
+                panic_with_error!(e, Error::InsufficientEscrow);
+            }
+            true
+        });
 
         self.op.funding_progress -= shares_to_burn;
-        self.op.usdc_raised -= usdc_to_refund;
-        self.eurc.raised -= eurc_to_refund;
-
         if shares_to_burn > 0 {
             self.oplend.burn(&user, &shares_to_burn);
         }
+
         let this = e.current_contract_address();
-        if usdc_to_refund > 0 {
-            self.usdc.transfer(&this, &user, &usdc_to_refund);
-        }
-        if eurc_to_refund > 0 {
-            st::eurc_client(e).transfer(&this, &user, &eurc_to_refund);
+        for ((coin, amount), from_admin) in refunds.into_iter().zip(from_admin)
+        {
+            if amount == 0 {
+                continue;
+            }
+            let token = st::token_client(e, coin);
+            if from_admin {
+                token.transfer(&self.admin, &user, &amount);
+            } else {
+                self.op.escrow_mut(coin).raised -= amount;
+                token.transfer(&this, &user, &amount);
+            }
         }
 
         events::Refunded {
@@ -99,10 +106,6 @@ impl<'a> Refunds<'a> {
 
     fn store(&self, e: &Env) {
         st::write_op(e, self.id, &self.op);
-        // Operations that never took EURC keep no `EurcEscrow` entry.
-        if self.eurc.raised != self.eurc_raised_before {
-            st::write_eurc_escrow(e, self.id, &self.eurc);
-        }
     }
 }
 
@@ -114,10 +117,10 @@ pub fn refund_user(
     usdc_to_refund: i128,
     eurc_to_refund: i128,
 ) {
-    st::require_admin(e);
+    let admin = st::require_admin(e);
     st::bump_instance(e);
 
-    let mut refunds = Refunds::load(e, id);
+    let mut refunds = Refunds::load(e, id, admin);
     refunds.refund(
         e,
         RefundEntry {
@@ -131,10 +134,10 @@ pub fn refund_user(
 }
 
 pub fn batch_refund_users(e: &Env, id: u32, entries: Vec<RefundEntry>) {
-    st::require_admin(e);
+    let admin = st::require_admin(e);
     st::bump_instance(e);
 
-    let mut refunds = Refunds::load(e, id);
+    let mut refunds = Refunds::load(e, id, admin);
     for entry in entries.iter() {
         refunds.refund(e, entry);
     }
@@ -193,10 +196,10 @@ pub fn update_oracle_address(e: &Env, new_oracle: Address) {
     set_oracle(e, &new_oracle);
 }
 
-pub fn update_usdc_oracle_address(e: &Env, new_oracle: Address) {
+pub fn update_stablecoin_oracle_address(e: &Env, new_oracle: Address) {
     st::require_admin(e);
     st::bump_instance(e);
-    set_usdc_oracle(e, &new_oracle);
+    set_stablecoin_oracle(e, &new_oracle);
 }
 
 /// Rotates the backend key for the factory and, since they read it from here,
@@ -257,15 +260,15 @@ pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
 }
 
 /// Strkeys of the all-zero account key and contract id: valid addresses nobody
-/// controls, Stellar's nearest thing to EVM's `address(0)`. USDC sent to the
-/// zero contract id lands in the token's ledger and can never move again.
+/// controls, Stellar's nearest thing to EVM's `address(0)`. Tokens sent to the
+/// zero contract id land in the token's ledger and can never move again.
 const ZERO_ACCOUNT: &[u8; 56] =
     b"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
 const ZERO_CONTRACT: &[u8; 56] =
     b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 
 /// Rejects payout destinations that would strand the funds: the factory itself
-/// (the USDC would stay in the shared balance but count as withdrawn, so no
+/// (the coins would stay in the shared balance but count as withdrawn, so no
 /// operation could ever reach it again) and the zero addresses.
 fn require_payout_destination(e: &Env, destination: &Address) {
     if *destination == e.current_contract_address() {
@@ -279,9 +282,9 @@ fn require_payout_destination(e: &Env, destination: &Address) {
 }
 
 /// Sends everything operation `id` raised since the previous withdrawal, in
-/// both tokens: USDC and EURC each go to `destination` as themselves, and
-/// `FundingWithdrawn` reports each amount in its own token's base units.
-pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
+/// both coins: USDC and EURC each go to `destination` as themselves, and
+/// `FundingWithdrawn` reports each amount in its own coin's base units.
+pub fn withdraw_funds(e: &Env, id: u32, destination: Address) {
     st::require_admin(e);
     st::bump_instance(e);
     require_payout_destination(e, &destination);
@@ -290,35 +293,31 @@ pub fn withdraw_usdc(e: &Env, id: u32, destination: Address) {
     if !op.flag(F_STARTED) {
         panic_with_error!(e, Error::OperationNotStarted);
     }
-    let withdrawn = st::read_usdc_withdrawn(e, id);
-    let amount = op.usdc_raised - withdrawn;
-    let mut eurc = st::read_eurc_escrow(e, id);
-    let eurc_amount = eurc.raised - eurc.withdrawn;
-    if amount <= 0 && eurc_amount <= 0 {
+    let amounts = Coin::ALL.map(|coin| op.escrow(coin).available());
+    if amounts.iter().all(|&amount| amount == 0) {
         panic_with_error!(e, Error::NothingToWithdraw);
     }
 
-    let this = e.current_contract_address();
-
-    if amount > 0 {
-        st::write_usdc_withdrawn(e, id, op.usdc_raised);
-        if !op.flag(F_WITHDRAWN) {
-            op.set_flag(F_WITHDRAWN, true);
-            st::write_op(e, id, &op);
+    for (coin, amount) in Coin::ALL.into_iter().zip(amounts) {
+        if amount > 0 {
+            let escrow = op.escrow_mut(coin);
+            escrow.withdrawn = escrow.raised;
         }
-        st::usdc_client(e).transfer(&this, &destination, &amount);
+    }
+    st::write_op(e, id, &op);
+
+    let this = e.current_contract_address();
+    for (coin, amount) in Coin::ALL.into_iter().zip(amounts) {
+        if amount > 0 {
+            st::token_client(e, coin).transfer(&this, &destination, &amount);
+        }
     }
 
-    if eurc_amount > 0 {
-        eurc.withdrawn = eurc.raised;
-        st::write_eurc_escrow(e, id, &eurc);
-        st::eurc_client(e).transfer(&this, &destination, &eurc_amount);
-    }
-
+    let [usdc_amount, eurc_amount] = amounts;
     events::FundingWithdrawn {
         operation_id: id,
-        usdc_amount: amount.max(0),
-        eurc_amount: eurc_amount.max(0),
+        usdc_amount,
+        eurc_amount,
     }
     .publish(e);
 }

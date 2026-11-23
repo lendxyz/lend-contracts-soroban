@@ -76,17 +76,19 @@ create_operation ──► [created] ──► start_operation ──► [open] 
                           │                               │
                           │                               ├─ pause_funding(true/false)
                           │                               ├─ invest / invest_eur / fiat_invest
-                          │                               └─ withdraw_usdc (any time once started, repeatable; USDC + EURC)
+                          │                               └─ withdraw_funds (any time once started, repeatable; USDC + EURC)
                           │
                           └─ cancel_operation ──► [canceled] ──► refund_user / batch_refund_users
 ```
 
 An operation is **finished** when `funding_progress >= total_shares`. Raised
 funds can be withdrawn any time after the operation starts, including during the
-sale; each `withdraw_usdc` sends what was raised since the previous one, USDC
+sale; each `withdraw_funds` sends what was raised since the previous one, USDC
 and EURC each as themselves. A refund that exceeds what the operation still
-escrows (raised − withdrawn, per token) fails with `InsufficientEscrow`, since
-all operations share one balance per token.
+escrows (raised − withdrawn, per token) is never paid from the factory, since
+all operations share one balance per token: the admin's own wallet pays that
+coin's whole amount instead, and the refund fails with `InsufficientEscrow` only
+when neither the escrow nor the admin's balance covers it.
 
 ---
 
@@ -106,11 +108,12 @@ Responsibilities:
   signature and consume a single-use nonce.
 - **Refunds & withdrawal**: `refund_user` / `batch_refund_users` burn an
   admin-chosen number of shares and repay admin-chosen USDC and EURC amounts
-  from the operation's escrow (none of them tied to another: shares move
+  from the operation's escrow, or from the admin's wallet when the escrow
+  cannot cover a coin's amount (none of them tied to another: shares move
   between holders);
   `fiat_refund` mirrors an off-chain euro refund (burns the custodied shares
   from the holder and puts them back on sale, bounded by the holder's balance);
-  `withdraw_usdc` releases the raised funds not yet withdrawn, in both tokens,
+  `withdraw_funds` releases the raised funds not yet withdrawn, in both coins,
   any time after an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
   `oplend_whitelist_user`, `oplend_void_nonce`, `oplend_admin_burn`, and
@@ -120,7 +123,7 @@ Responsibilities:
   op-lend token and to the OpLendWallet, which read it on each signature
   check, so `update_backend_signer` rotates it everywhere at once.
 - **Pricing helpers**: `get_amount_in` / `get_amount_out` quote shares ↔ USDC;
-  `get_amount_in_eur` quotes the EURC cost of shares.
+  `get_amount_in_eur` / `get_amount_out_eur` quote shares ↔ EURC.
 
 Key invariants enforced on every invest path (`invest_guards`): operation
 exists, is started, not canceled, not paused, not finished, the caller is not
@@ -250,27 +253,29 @@ pub trait OracleInterface {
 `get_eur_usd_price` reads the `EUR` price, rejects non-positive or stale prices
 (> 24h old), and scales it to 6 decimals. Pricing math:
 
-- `amount_in(eur_per_share, shares)` → USDC cost (`PRICE_PRECISION = 1e6`).
-- `amount_out(eur_per_share, usdc)` → shares; the 12-decimal divisor (6-decimal
-  price × 6-decimal rate) is rescaled with `PRICE_PRECISION * PRICE_PRECISION`.
-- `eurc_amount_in(eur_per_share, shares)` → EURC cost. Shares are priced in
-  EUR, so this has no oracle leg.
-- `eurc_to_usdc(eurc)` → the USD value, in USDC base units, that `Invested`
-  reports for an EURC purchase.
+- `amount_in(coin, eur_per_share, shares)` → cost in USDC or EURC base units
+  (`PRICE_PRECISION = 1e6`). USDC goes through the EUR/USD rate; EURC is taken
+  at par with EUR, so its cost has no oracle leg.
+- `amount_out(coin, eur_per_share, amount)` → shares; the 12-decimal divisor
+  (6-decimal price × 6-decimal rate) is rescaled with
+  `PRICE_PRECISION * PRICE_PRECISION`.
+- `usd_value(coin, amount)` → the USD value, in USDC base units, that
+  `Invested` reports (USDC as is, EURC at the EUR/USD rate).
 
 `decimals()` is read once — in the constructor, and again on every
 `update_oracle_address` — and cached in instance storage, so pricing costs a
 single cross-contract call. Re-run `update_oracle_address` (the same address is
 fine) if a feed ever changes its decimals in place.
 
-Pricing treats 1 USDC as 1 USD. To keep that true, `invest` also reads `USDC`
-from a second feed (`usdc_oracle`, Reflector's CEX & DEX oracle; the forex
-feed has no USDC) through the same checks, and fails with `UsdcOffPeg` while
-it is outside [0.98, 1.02]. `fiat_invest` (settled in euros off-chain),
-refunds (which return the exact USDC paid) and the quote getters are not
-gated. Change the feed with `update_usdc_oracle_address`. `invest_eur` moves
-no USDC, so it is not gated either; it treats 1 EURC as 1 EUR, with no peg
-check of its own.
+Pricing treats 1 USDC as 1 USD and 1 EURC as 1 EUR. To keep that true, both
+on-chain purchase paths read a second feed (`stablecoin_oracle`, Reflector's
+CEX & DEX oracle, which prices `USDC` and `EURC` in USD; the forex feed has
+neither) through the same checks. `invest` fails with `UsdcOffPeg` while
+USDC/USD is outside [0.98, 1.02]; `invest_eur` fails with `EurcOffPeg` while
+EURC/EUR (its USD price over EUR/USD) is outside the same band. `fiat_invest`
+(settled in euros off-chain), refunds (which return admin-chosen amounts of
+each coin) and the quote getters are not gated. Change the feed with
+`update_stablecoin_oracle_address`.
 
 ### Decimals
 
@@ -283,17 +288,17 @@ Stellar asset behind a SAC, so it reports 7 decimals**, and the testnet
 DummyUSDC is deployed with 7 to match. The factory never assumes either value:
 the constructor caches the USDC token's `decimals()` alongside the oracle's, and
 `amount_in` / `amount_out` convert between the 6-decimal pricing space and the
-token's own base units. `usdc_raised`, `Position::invested` and the amounts in
-`Invested` / `Refunded` events are all in USDC base units — read them against
-the token's `decimals()`, never against a hardcoded 1e6.
+token's own base units. `usdc_raised`, `Position::usdc_invested` and the
+amounts in `Invested` / `Refunded` events are all in USDC base units — read
+them against the token's `decimals()`, never against a hardcoded 1e6.
 
-`DataKey::Usdc` is write-once: the cached scale is only correct for the token it
-was deployed with, so pointing the factory at a USDC with different decimals
-means a fresh deploy, not a setter. Swapping it in place would also invalidate
-every `usdc_raised` already denominated in the old token's units.
+`DataKey::Token(coin)` is write-once: the cached scale is only correct for the
+token it was deployed with, so pointing the factory at a USDC with different
+decimals means a fresh deploy, not a setter. Swapping it in place would also
+invalidate every `usdc_raised` already denominated in the old token's units.
 
 EURC follows the same rules: the constructor takes it and caches its
-`decimals()` (`DataKey::Eurc`, write-once). EURC amounts (`eurc_raised`,
+`decimals()` (`DataKey::Token(Eurc)`, write-once). EURC amounts (`eurc_raised`,
 `eurc_raised_per_client`, `eurc_withdrawn_amount`) are in EURC base units.
 `Invested.usdc_amount` for an `invest_eur` is the USD value of the EURC paid
 at the current oracle rate. `Refunded` and `FundingWithdrawn` do no
@@ -317,20 +322,20 @@ touch a dozen entries.
 
 | Key | Holds | Replaces |
 | --- | --- | --- |
-| `Op(id)` | token address, share total, price, funding progress, USDC raised, and the started / canceled / paused / withdrawn bits in one `u32` | 8 separate per-operation keys |
+| `Op(id)` | token address, share total, price, funding progress, one `Escrow { raised, withdrawn }` per coin (USDC, EURC), and the started / canceled / paused bits in one `u32` | 8 separate per-operation keys |
 | `OpName(id)` | display name only — metadata no funding path reads, kept out of the entry rewritten on every invest | (part of `Operation`) |
-| `Position(id, user)` | USDC paid in (a record, not reduced by refunds) | (per-(op, user) mapping) |
-| `EurcEscrow(id)` | EURC raised (net of refunds) and EURC withdrawn — only exists once an operation takes EURC | (new) |
-| `EurcPosition(id, user)` | EURC paid in (a record, not reduced by refunds) | (new) |
+| `Position(id, user)` | USDC and EURC paid in (a record, not reduced by refunds) | (per-(op, user) mapping) |
 | `Account(addr)` (op-lend) | balance + whitelist flag | `Balance` + `Whitelisted` |
 
 `Operation` — the struct returned by `operations` / `get_operation` — is
 unchanged; it is assembled on read from `Op(id)` + `OpName(id)`.
 
-Stored `contracttype` structs decode by field name, so a field added to `Op`
-or `Position` would make every already-stored entry unreadable after an
-in-place upgrade. New per-operation or per-position state therefore gets its
-own key (`UsdcWithdrawn`, `EurcEscrow`, `EurcPosition`), appended to `DataKey`.
+Each coin has the same fields, helpers and code path (`Coin::Usdc` /
+`Coin::Eurc`): `invest` and `invest_eur`, refunds and `withdraw_funds` differ
+only in the coin they pass. Stored `contracttype` structs decode by field name,
+so adding a field to `Op` or `Position` makes earlier entries unreadable after
+an in-place upgrade; the factory is redeployed on a fresh instance, so this
+layout carries no legacy keys.
 
 Every state-changing entry point extends the instance TTL, and writes to
 per-operation, per-position, merkle-root and claim entries extend theirs. Used
@@ -354,7 +359,7 @@ the generated `try_*` client methods.
 
 ```rust
 // Setup
-fn __constructor(admin, usdc, eurc, oracle, usdc_oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>, first_op_id: u32)  // runs at deploy; first op gets `first_op_id`
+fn __constructor(admin, usdc, eurc, oracle, stablecoin_oracle, backend_signer: BytesN<32>, oplend_wasm_hash: BytesN<32>, first_op_id: u32)  // runs at deploy; first op gets `first_op_id`
 fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
 
 // Operations
@@ -364,20 +369,21 @@ fn cancel_operation(id: u32)
 fn pause_funding(id: u32, state: bool)
 
 // Invest
-fn invest(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
-fn invest_eur(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)
+fn invest(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)      // USDC; refused off peg
+fn invest_eur(user, id: u32, shares_amount: i128, nonce: String, signature: BytesN<64>)  // EURC; refused off peg
 fn fiat_invest(id: u32, shares_amount: i128, user, oplend_holder, nonce: String, signature: BytesN<64>)
 fn get_amount_in(id: u32, shares_amount: i128) -> i128
 fn get_amount_in_eur(id: u32, shares_amount: i128) -> i128
 fn get_amount_out(id: u32, usdc_amount: i128) -> i128
+fn get_amount_out_eur(id: u32, eurc_amount: i128) -> i128
 
 // Admin
-fn refund_user(id: u32, user, shares_to_burn: i128, usdc_to_refund: i128, eurc_to_refund: i128)  // admin decides all three; burn capped at the user's balance
+fn refund_user(id: u32, user, shares_to_burn: i128, usdc_to_refund: i128, eurc_to_refund: i128)  // admin decides all three; burn capped at the user's balance; per coin, paid by the escrow, else the admin's wallet
 fn batch_refund_users(id: u32, entries: Vec<RefundEntry>) // RefundEntry { user, shares_to_burn, usdc_to_refund, eurc_to_refund }
 fn fiat_refund(id: u32, user, oplend_holder, shares_amount: i128)  // admin; burns from oplend_holder, lowers funding_progress
-fn withdraw_usdc(id: u32, destination)                    // sends pending USDC and EURC
+fn withdraw_funds(id: u32, destination)                   // sends pending USDC and EURC
 fn update_oracle_address(new_oracle)
-fn update_usdc_oracle_address(new_oracle)                  // USDC/USD feed for the depeg check
+fn update_stablecoin_oracle_address(new_oracle)            // USDC/USD + EURC/USD feed for the depeg checks
 fn update_backend_signer(new_signer: BytesN<32>)           // also rotates it for op-lend tokens + wallet
 fn blacklist(user, state: bool)
 fn oplend_whitelist_user(op_id: u32, user, state: bool)
@@ -394,7 +400,7 @@ fn usdc_raised(id) -> i128
 fn funding_paused(id) -> bool
 fn operation_started(id) -> bool
 fn operation_canceled(id) -> bool
-fn usdc_withdrawn(id) -> bool
+fn funds_withdrawn(id) -> bool                             // any withdrawal, in either coin
 fn usdc_withdrawn_amount(id) -> i128
 fn eurc_raised(id) -> i128
 fn eurc_withdrawn_amount(id) -> i128

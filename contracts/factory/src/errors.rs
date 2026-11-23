@@ -29,4 +29,5 @@ pub enum Error {
     AmountTooSmall = 23,
     UsdcOffPeg = 24,
     InsufficientShareBalance = 25,
+    EurcOffPeg = 26,
 }
