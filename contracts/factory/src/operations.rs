@@ -81,12 +81,18 @@ pub fn create_operation(
 /// Sets an operation flag, failing if it already has the requested value: a
 /// repeated start / cancel / pause / resume is a mistake, and would otherwise
 /// emit an event for a change that never happened.
+///
+/// A finished operation cannot be canceled: it is settled, and refunds refuse
+/// it.
 fn set_flag(e: &Env, id: u32, flag: u32, state: bool) {
     st::require_admin(e);
     st::bump_instance(e);
     let mut op = st::read_op(e, id);
     if op.flag(flag) == state {
         panic_with_error!(e, Error::StateUnchanged);
+    }
+    if flag == F_CANCELED && op.finished() {
+        panic_with_error!(e, Error::OperationFinished);
     }
     op.set_flag(flag, state);
     st::write_op(e, id, &op);

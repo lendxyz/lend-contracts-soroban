@@ -1301,7 +1301,8 @@ fn test_invest_refused_while_usdc_off_peg() {
 
 /// AUDIT Factory C5: an off-chain euro refund is mirrored with `fiat_refund`,
 /// which burns the custodied shares and puts them back on sale. Like
-/// `refund_user`, it is bounded by the holder's balance.
+/// `refund_user`, it is bounded by the holder's balance and refused once the
+/// operation is finished.
 #[test]
 fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     let s = setup();
@@ -1309,7 +1310,7 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     s.factory.start_operation(&id);
     let op_token = oplend::Client::new(&s.e, &op_addr);
 
-    // A euro buyer takes the whole sale; the shares sit with the holder.
+    // A euro buyer takes 60 shares; they sit with the holder.
     let fiat_user = Address::generate(&s.e);
     let holder = Address::generate(&s.e);
     let nonce = String::from_str(&s.e, "fiat");
@@ -1319,12 +1320,11 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
         id,
         &fiat_user,
         &holder,
-        100,
+        60,
         &nonce,
     );
     s.factory
-        .fiat_invest(&id, &100, &fiat_user, &holder, &nonce, &sig);
-    assert!(s.factory.is_operation_finished(&id));
+        .fiat_invest(&id, &60, &fiat_user, &holder, &nonce, &sig);
 
     s.factory.fiat_refund(&id, &fiat_user, &holder, &40);
 
@@ -1338,21 +1338,14 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
     let events = s.e.events().all().filter_by_contract(&s.factory_id);
     assert!(events.events().contains(&expected));
 
-    assert_eq!(op_token.balance(&holder), 60);
-    assert_eq!(op_token.total_supply(), 60);
-    assert_eq!(s.factory.funding_progress(&id), 60);
-    assert!(!s.factory.is_operation_finished(&id));
-
-    // The refunded shares are on sale again, to a USDC buyer.
-    let usdc_user = Address::generate(&s.e);
-    s.usdc.mint(&usdc_user, &10_000);
-    invest_as(&s, id, &usdc_user, 40, "usdc");
-    assert!(s.factory.is_operation_finished(&id));
+    assert_eq!(op_token.balance(&holder), 20);
+    assert_eq!(op_token.total_supply(), 20);
+    assert_eq!(s.factory.funding_progress(&id), 20);
 
     // No more than the holder has left.
     assert_eq!(
         s.factory
-            .try_fiat_refund(&id, &fiat_user, &holder, &61)
+            .try_fiat_refund(&id, &fiat_user, &holder, &21)
             .err(),
         Some(Ok(Error::InsufficientShareBalance.into()))
     );
@@ -1369,7 +1362,65 @@ fn test_fiat_refund_burns_custodied_shares_and_reopens_the_sale() {
         .factory
         .try_fiat_refund(&id, &fiat_user, &holder, &10)
         .is_err());
-    assert_eq!(op_token.balance(&holder), 60);
+    assert_eq!(op_token.balance(&holder), 20);
+    s.e.mock_all_auths();
+
+    // The refunded shares are on sale again: a USDC buyer takes the remaining
+    // 80, which finishes the operation, and a finished operation is not
+    // refunded.
+    let usdc_user = Address::generate(&s.e);
+    s.usdc.mint(&usdc_user, &10_000);
+    invest_as(&s, id, &usdc_user, 80, "usdc");
+    assert!(s.factory.is_operation_finished(&id));
+    assert_eq!(
+        s.factory
+            .try_fiat_refund(&id, &fiat_user, &holder, &10)
+            .err(),
+        Some(Ok(Error::OperationFinished.into()))
+    );
+    assert_eq!(op_token.balance(&holder), 20);
+}
+
+/// A finished operation is settled: `refund_user`, `batch_refund_users` and
+/// `cancel_operation` all fail with `OperationFinished`, and nothing moves.
+#[test]
+fn test_finished_operation_cannot_be_refunded_or_canceled() {
+    let s = setup();
+    let (id, op_addr) = create_op(&s, 100);
+    s.factory.start_operation(&id);
+    let op_token = oplend::Client::new(&s.e, &op_addr);
+    let usdc_tok = soroban_sdk::token::Client::new(&s.e, &s.usdc_addr);
+
+    let user = Address::generate(&s.e);
+    s.usdc.mint(&user, &10_000);
+    invest_as(&s, id, &user, 100, "n1"); // the whole sale, for 1100
+    assert!(s.factory.is_operation_finished(&id));
+
+    let finished = Some(Ok(Error::OperationFinished.into()));
+    assert_eq!(
+        s.factory.try_refund_user(&id, &user, &100, &1100, &0).err(),
+        finished
+    );
+    let batch = soroban_sdk::vec![
+        &s.e,
+        RefundEntry {
+            user: user.clone(),
+            shares_to_burn: 100,
+            usdc_to_refund: 1100,
+            eurc_to_refund: 0,
+        }
+    ];
+    assert_eq!(
+        s.factory.try_batch_refund_users(&id, &batch).err(),
+        finished
+    );
+    assert_eq!(s.factory.try_cancel_operation(&id).err(), finished);
+
+    assert!(!s.factory.operation_canceled(&id));
+    assert_eq!(op_token.balance(&user), 100);
+    assert_eq!(usdc_tok.balance(&user), 10_000 - 1100);
+    assert_eq!(s.factory.funding_progress(&id), 100);
+    assert_eq!(s.factory.usdc_raised(&id), 1100);
 }
 
 // --- AUDIT Factory T1: missing tests ---

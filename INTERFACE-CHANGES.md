@@ -103,7 +103,7 @@ What is live today:
 | `eurc_raised_per_client(id, user) -> i128` | EURC paid in by `user` (a record, not reduced by refunds) |
 | `funds_withdrawn(id) -> bool` | True once any coin has been withdrawn (replaces `usdc_withdrawn`) |
 | `withdraw_funds(id, destination)` | Sends the USDC **and** EURC raised since the previous withdrawal (replaces `withdraw_usdc`) |
-| `fiat_refund(id, user, oplend_holder, shares_amount)` | Admin: mirrors an off-chain euro refund by burning `shares_amount` from `oplend_holder` and reopening them for sale |
+| `fiat_refund(id, user, oplend_holder, shares_amount)` | Admin: mirrors an off-chain euro refund by burning `shares_amount` from `oplend_holder` and reopening them for sale; refused once the operation is finished |
 | `void_nonce(nonce, signature: Option<BytesN<64>>)` | Burns an unspent invest / fiat-invest nonce (see [Signed messages](#signed-messages)) |
 | `oplend_void_nonce(op_id, nonce)` | Admin: voids a whitelist nonce on an operation's token |
 | `oplend_upgrade(op_id, new_wasm_hash: BytesN<32>)` | Admin: upgrades an operation's token, and makes that code the one new operations deploy from |
@@ -204,10 +204,15 @@ Unchanged: `OperationCreated`, `OperationStarted`, `OperationCanceled`,
 - `start_operation`, `cancel_operation` and `pause_funding` fail with
   `StateUnchanged` when nothing would change, instead of succeeding and
   emitting an event.
+- `cancel_operation` fails with `OperationFinished` on a finished operation
+  (started and fully sold).
 
-**Refunds** (`refund_user`, `batch_refund_users`)
-- The admin decides the shares to burn and the USDC and EURC to repay; they are
-  no longer derived from the position. Negative amounts, or all three zero,
+**Refunds** (`refund_user`, `batch_refund_users`, `fiat_refund`)
+- All three fail with `OperationFinished` once the operation is finished. On an
+  operation that is not finished, the burned shares go back on sale.
+- `refund_user` / `batch_refund_users`: the admin decides the shares to burn
+  and the USDC and EURC to repay; they are no longer derived from the
+  position. Negative amounts, or all three zero,
   fail with `InvalidShares` / `InvalidAmount`. Burning more than the user holds
   fails with `InsufficientShareBalance`.
 - For each coin, the operation's escrow pays if it holds the full amount;

@@ -81,7 +81,10 @@ create_operation ──► [created] ──► start_operation ──► [open] 
                           └─ cancel_operation ──► [canceled] ──► refund_user / batch_refund_users
 ```
 
-An operation is **finished** when `funding_progress >= total_shares`. Raised
+An operation is **finished** when `funding_progress >= total_shares`. A
+finished operation is settled: it can no longer be canceled or refunded
+(`OperationFinished`). Before that, a refund lowers `funding_progress`, so the
+burned shares are back on sale. Raised
 funds can be withdrawn any time after the operation starts, including during the
 sale; each `withdraw_funds` sends what was raised since the previous one, USDC
 and EURC each as themselves. A refund that exceeds what the operation still
@@ -113,6 +116,7 @@ Responsibilities:
   between holders);
   `fiat_refund` mirrors an off-chain euro refund (burns the custodied shares
   from the holder and puts them back on sale, bounded by the holder's balance);
+  no refund is accepted once the operation is finished;
   `withdraw_funds` releases the raised funds not yet withdrawn, in both coins,
   any time after an operation starts.
 - **OpLend admin proxy**: because the Factory is the OpLend admin, it exposes
@@ -365,7 +369,7 @@ fn set_oplend_wasm_hash(oplend_wasm_hash: BytesN<32>)
 // Operations
 fn create_operation(op_name: String, total_shares: i128, eur_per_share: i128) -> Address
 fn start_operation(id: u32)
-fn cancel_operation(id: u32)
+fn cancel_operation(id: u32)                              // refused once finished
 fn pause_funding(id: u32, state: bool)
 
 // Invest
@@ -381,6 +385,7 @@ fn get_amount_out_eur(id: u32, eurc_amount: i128) -> i128
 fn refund_user(id: u32, user, shares_to_burn: i128, usdc_to_refund: i128, eurc_to_refund: i128)  // admin decides all three; burn capped at the user's balance; per coin, paid by the escrow, else the admin's wallet
 fn batch_refund_users(id: u32, entries: Vec<RefundEntry>) // RefundEntry { user, shares_to_burn, usdc_to_refund, eurc_to_refund }
 fn fiat_refund(id: u32, user, oplend_holder, shares_amount: i128)  // admin; burns from oplend_holder, lowers funding_progress
+// refund_user / batch_refund_users / fiat_refund: refused once the operation is finished
 fn withdraw_funds(id: u32, destination)                   // sends pending USDC and EURC
 fn update_oracle_address(new_oracle)
 fn update_stablecoin_oracle_address(new_oracle)            // USDC/USD + EURC/USD feed for the depeg checks

@@ -240,7 +240,8 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
 - New admin-only `fiat_refund(id, user, oplend_holder, shares_amount)`: burns
   `shares_amount` shares from `oplend_holder` (normally the op-lend wallet that
   custodies euro buyers' shares) and lowers `funding_progress` by the same
-  amount, so the shares are back on sale (a finished operation reopens).
+  amount, so the shares are back on sale. Like every refund, it is refused
+  once the operation is finished (see below).
 - No per-investor cap: an earlier `Position.fiat_shares` quota (with a
   `fiat_shares(id, user)` getter and `InsufficientFiatShares` error) is
   removed. It was keyed on `user` while the burn hits `oplend_holder`, which
@@ -489,3 +490,16 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   shares are burned or tokens moved.
 - The `Refunded` event is unchanged and does not say who paid; the token's own
   transfer event shows the sender (factory or admin).
+
+## Factory: no refund or cancel once an operation is finished
+
+- A finished operation (started and fully sold) is settled. `refund_user`,
+  `batch_refund_users` and `fiat_refund` now fail with `OperationFinished`
+  on it. Before, a refund lowered `funding_progress` and reopened the sale of
+  an operation whose funds may already have been withdrawn.
+- `cancel_operation` fails with `OperationFinished` on a finished operation
+  too. Otherwise canceling would be the way around the refund guard, and a
+  canceled finished operation could not be refunded anyway.
+- Refunds and cancels before the operation fills are unchanged. A refund on an
+  operation that is not finished still lowers `funding_progress`, so those
+  shares are back on sale.

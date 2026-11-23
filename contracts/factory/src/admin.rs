@@ -21,7 +21,7 @@ struct Refunds<'a> {
 
 impl<'a> Refunds<'a> {
     fn load(e: &'a Env, id: u32, admin: Address) -> Self {
-        let op = st::read_op(e, id);
+        let op = read_refundable_op(e, id);
         Refunds {
             id,
             oplend: OpLendClient::new(e, &op.op_token),
@@ -144,11 +144,23 @@ pub fn batch_refund_users(e: &Env, id: u32, entries: Vec<RefundEntry>) {
     refunds.store(e);
 }
 
+/// A finished operation is settled: refunding it would reopen the sale after
+/// its funds may already be withdrawn. `cancel_operation` refuses a finished
+/// operation too, so a finished operation can never be refunded.
+fn read_refundable_op(e: &Env, id: u32) -> OpData {
+    let op = st::read_op(e, id);
+    if op.finished() {
+        panic_with_error!(e, Error::OperationFinished);
+    }
+    op
+}
+
 /// Mirrors an off-chain euro refund: burns `shares_amount` shares from
 /// `oplend_holder` (where euro buyers' shares are custodied, normally the
 /// op-lend wallet) and puts them back on sale. Like `refund_user`, it is
-/// bounded only by the holder's balance: the amount and the holder are the
-/// admin's call, and `user` only labels the events.
+/// bounded only by the holder's balance, and refused once the operation is
+/// finished: the amount and the holder are the admin's call, and `user` only
+/// labels the events.
 pub fn fiat_refund(
     e: &Env,
     id: u32,
@@ -162,7 +174,7 @@ pub fn fiat_refund(
         panic_with_error!(e, Error::InvalidShares);
     }
 
-    let mut op = st::read_op(e, id);
+    let mut op = read_refundable_op(e, id);
     let oplend = OpLendClient::new(e, &op.op_token);
     if shares_amount > oplend.balance(&oplend_holder) {
         panic_with_error!(e, Error::InsufficientShareBalance);
