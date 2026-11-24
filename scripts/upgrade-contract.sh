@@ -50,7 +50,7 @@ case "$CONTRACT" in
     DEPLOY_SCRIPT="scripts/deploy-factory.sh"
     ;;
   rewards)
-    : "${CONTRACT_ID:=${REWARDS_ID:-}}"
+    : "${CONTRACT_ID:=${REWARDS_ID_USD:-}}"
     : "${WASM:=$WASM_DIR/lend_rewards.wasm}"
     DEPLOY_SCRIPT="scripts/deploy-rewards.sh"
     ;;

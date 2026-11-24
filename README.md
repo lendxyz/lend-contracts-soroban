@@ -547,7 +547,7 @@ Network, signer and contract addresses live in one place,
 make deploy-factory
 make deploy-rewards
 make deploy-op-lend-wallet
-make deploy-dummy-usdc
+make deploy-dummy-tokens ASSET=USDC   # or ASSET=EURC
 make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 make start-operation OP_ID=0
 make invest OP_ID=0 SHARES=100 NONCE=abc SIGNATURE=deadbeef...

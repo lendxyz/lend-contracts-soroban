@@ -37,7 +37,7 @@ echo "==> Building wasms..."
 (cd "$REPO_ROOT" && stellar contract build)
 
 echo "==> Deploying LendRewards..."
-REWARDS_ID="$(stellar contract deploy \
+REWARDS_CONTRACT="$(stellar contract deploy \
   --wasm "$REWARDS_WASM" \
   --source "$SOURCE" \
   "${NETWORK_ARGS[@]}" \
@@ -46,7 +46,11 @@ REWARDS_ID="$(stellar contract deploy \
   --admin "$ADMIN" \
   --reward_token "$REWARD_TOKEN" | tail -n1)"
 
+# One LendRewards contract per reward asset; name the common.sh variable to set.
+REWARDS_VAR=REWARDS_ID_USD
+[ "$REWARD_TOKEN" = "${EURC:-}" ] && REWARDS_VAR=REWARDS_ID_EUR
+
 echo ""
 echo "==> Done."
-echo "    REWARDS_ID=$REWARDS_ID"
+echo "    $REWARDS_VAR=$REWARDS_CONTRACT"
 echo "    # record it in DEPLOYMENTS.md and in scripts/common.sh"

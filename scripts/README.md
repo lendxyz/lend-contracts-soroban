@@ -294,8 +294,10 @@ NETWORK=testnet \  # optional, default testnet
 ```
 
 `REWARD_TOKEN` defaults to the network's USDC (see
-[Network addresses](#network-addresses)); set it to override. `ADMIN` defaults
-to the `SOURCE` address. Prints `REWARDS_ID` on success.
+[Network addresses](#network-addresses)); set it to override (e.g.
+`REWARD_TOKEN=$EURC` for the EURC rewards contract). `ADMIN` defaults to the
+`SOURCE` address. Prints `REWARDS_ID_USD` (or `REWARDS_ID_EUR` when the reward
+token is the network's EURC) on success.
 
 Merkle leaves are `keccak256(user_strkey_bytes ++ balance_i128_be)`, internal
 nodes sorted-pair keccak256 (OZ-compatible). The backend tree builder must match
@@ -308,9 +310,15 @@ distributes it on `LendRewards` for a given `OP_ID` / `EPOCH`. Wraps
 `build-merkle-tree.js`, approves the reward token, then calls
 `distribute_op_rewards(op_id, epoch, merkle_root, total_allocation)`.
 
+`ASSET` picks the reward asset: `USDC` (default) distributes on
+`REWARDS_ID_USD`, `EURC` on `REWARDS_ID_EUR` (testnet only for now). The
+contract's `reward_token` is checked against the network's `USDC` / `EURC`
+before anything is signed.
+
 ```bash
 SOURCE=admin \             # rewards-contract ADMIN; signs + funds the round
-REWARDS_ID=C... \          # deployed LendRewards contract
+ASSET=USDC \               # optional: USDC (default) | EURC
+REWARDS_ID_USD=C... \      # optional: override the LendRewards contract (REWARDS_ID_EUR for EURC)
 OP_ID=1 \                  # operation id (u32)
 EPOCH=3 \                  # reward epoch (u32)
 RECIPIENTS=./round3.json \ # recipients file (see below)
@@ -323,7 +331,8 @@ NETWORK=testnet \          # optional, default testnet
 base units (integers). Optional: `OUT` (proofs file the tree is written to;
 default `./rewards-op<OP_ID>-epoch<EPOCH>.json`), `TOTAL_ALLOCATION` (default =
 sum of balances; must be >= the sum), `REWARD_TOKEN` (default read from the
-contract), `APPROVE=0` to skip the allowance step, `EXPIRATION_LEDGER` to
+contract and checked against `ASSET`; an explicit value skips the check),
+`APPROVE=0` to skip the allowance step, `EXPIRATION_LEDGER` to
 override the approval expiry.
 
 The merkle tree is built (via `build-merkle-tree.js`) as the first step of the
@@ -337,9 +346,9 @@ Via make — `RECIPIENTS` defaults to `scripts/recipients.json`, `OUT` to
 `scripts/rewards-op<OP_ID>-epoch<EPOCH>.json`:
 
 ```bash
-make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3
-# or with an explicit recipients file:
-make distribute-op-rewards REWARDS_ID=C... OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
+make distribute-op-rewards OP_ID=1 EPOCH=3
+# EURC rewards, with an explicit recipients file:
+make distribute-op-rewards ASSET=EURC OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
 ```
 
 ## `build-merkle-tree.js`
@@ -356,19 +365,24 @@ sorted-pair keccak256 (OZ `MerkleProof._hashPair`) — verified byte-for-byte
 against the contract's own leaf output. It self-verifies every proof against the
 root before emitting. Matches `contracts/rewards/src/merkle.rs`.
 
-## `deploy-dummy-usdc.sh`
+## `deploy-dummy-tokens.sh`
 
-Deploys `DummyUSDC`, a testnet stand-in for Circle USDC. Standard SEP-41 token
-with **no transfer restrictions**; constructor takes admin + metadata.
+Deploys a dummy testnet token: `DummyUSDC` or `DummyEURC`, stand-ins for Circle
+USDC / EURC (both are the `DummyUSDC` wasm with different metadata). Standard
+SEP-41 token with **no transfer restrictions**; constructor takes admin +
+metadata.
 
 ```bash
 SOURCE=alice \
+ASSET=USDC \       # required: USDC | EURC
 NETWORK=testnet \  # optional, default testnet
-./scripts/deploy-dummy-usdc.sh
+./scripts/deploy-dummy-tokens.sh
 ```
 
-`ADMIN` defaults to the `SOURCE` address. `DECIMAL` / `NAME` / `SYMBOL` default
-to `6` / `"Dummy USD Coin"` / `"dUSDC"`. Prints `DUMMY_USDC_ID` on success.
+`ADMIN` defaults to the `SOURCE` address. `DECIMAL` defaults to `7`; `NAME` /
+`SYMBOL` default to `"Dummy USD Coin"` / `"dUSDC"` for `ASSET=USDC` and
+`"Dummy EUR Coin"` / `"dEURC"` for `ASSET=EURC`. Prints `DUMMY_USDC_ID` or
+`DUMMY_EURC_ID` on success.
 
 After deploy it mints **10M tokens** (`10_000_000 * 10^DECIMAL` base units) to
 the admin. The seed mint is signed by `SOURCE`, so it only works when `ADMIN`
@@ -377,25 +391,28 @@ is the `SOURCE` address (the default).
 - `mint(to, amount)` —— **open to anyone**, so devs can self-serve test
   tokens.
 
-Use this when you want a USDC-like token you fully control on testnet instead of
-the shared Circle SAC.
+Use this when you want a USDC- or EURC-like token you fully control on testnet
+instead of the shared Circle SACs.
 
-## `fund-dummy-usdc.sh`
+## `fund-dummy-tokens.sh`
 
-Mints DummyUSDC to any address. `mint` is open to anyone, so any `SOURCE`
-identity can top up any address.
+Mints a dummy testnet token (DummyUSDC or DummyEURC) to any address. `mint` is
+open to anyone, so any `SOURCE` identity can top up any address.
 
 ```bash
 SOURCE=alice \
+ASSET=USDC \           # required: USDC (DUMMY_USDC_ID) | EURC (DUMMY_EURC_ID)
 TO=G... \
-DUMMY_USDC_ID=CC... \  # optional, defaults per NETWORK (testnet below)
+DUMMY_USDC_ID=CC... \  # optional, defaults per NETWORK (DUMMY_EURC_ID for EURC)
 AMOUNT_WHOLE=10000 \   # optional, whole tokens (default 10000), scaled by DECIMAL
-DECIMAL=6 \            # optional, default 6
-./scripts/fund-dummy-usdc.sh
+DECIMAL=7 \            # optional, default read off the contract
+./scripts/fund-dummy-tokens.sh
 ```
 
-`DUMMY_USDC_ID` defaults to `CCO56ZVZPLGELBZGAVLTNC5GPZUIF4SIAIGPYNHWBRUSKBLC7HPF5QPN`
-on testnet; set it to override.
+On testnet, `DUMMY_USDC_ID` defaults to
+`CCZ7AXRKRCHHHITUPB42CWAWDY7TP753TLEGTFPANUTHZPLE5MAB6FAM` and `DUMMY_EURC_ID`
+to `CD5WKCHYPZBK5RHQR7XIBKKAYGP34YSYROJIDG2EOUNGHMW7LRAKTGCX`; set either to
+override.
 
 ## Network addresses
 
@@ -435,7 +452,7 @@ Verified 2026-06-02 (on-chain + Circle/Stellar docs).
   `contracts/factory/src/crypto.rs` and `contracts/op-lend/src/crypto.rs`.
 - `OPLEND_WALLET_ID` is the deployed `OpLendWallet` (`wallet-register-op-lend.sh`,
   `wallet-redeem.sh`, `upgrade-contract.sh CONTRACT=wallet`). It lives in `common.sh`
-  alongside `FACTORY_ID` / `REWARDS_ID`: set for testnet, and **empty on
+  alongside `FACTORY_ID` / `REWARDS_ID_USD`: set for testnet, and **empty on
   mainnet until the first `deploy-op-lend-wallet.sh`** — until then `req`
   aborts the scripts that need it, so record the new id there (and in
   [`DEPLOYMENTS.md`](../DEPLOYMENTS.md)) right after deploying.

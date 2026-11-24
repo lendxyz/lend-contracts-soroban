@@ -14,8 +14,8 @@
 # for each claim it carries { address, balance, proof }.
 #
 # Network, signer (SOURCE must be the rewards-contract ADMIN — it signs and
-# funds TOTAL_ALLOCATION), REWARDS_ID and RPC_URL come from scripts/common.sh;
-# override anything in the env.
+# funds TOTAL_ALLOCATION), REWARDS_ID_USD / REWARDS_ID_EUR, USDC / EURC and
+# RPC_URL come from scripts/common.sh; override anything in the env.
 #
 # Required env vars:
 #   OP_ID         Operation id (u32).
@@ -26,18 +26,23 @@
 #                 Balances are reward-token base units (integers).
 #
 # Optional env vars:
+#   ASSET             Reward asset: USDC (default) distributes on REWARDS_ID_USD,
+#                     EURC on REWARDS_ID_EUR. The contract's `reward_token` must
+#                     be the network's USDC / EURC respectively.
 #   OUT               Where to write the proofs JSON (default:
 #                     ./merkle.json).
 #   TOTAL_ALLOCATION  Override the funded amount (default: sum of balances).
 #                     Must be >= the sum, or claims will run the contract dry.
 #   REWARD_TOKEN      Reward token contract for the approval step. Default:
-#                     read from the contract via `reward_token`.
+#                     read from the contract via `reward_token` and checked
+#                     against ASSET.
 #   APPROVE           1 (default) to approve the token allowance first; 0 to
 #                     skip (e.g. you funded the contract another way).
 #   EXPIRATION_LEDGER Approval expiration ledger (default: current + ~30 days).
 #
 # Usage:
 #   OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json ./scripts/distribute-op-rewards.sh
+#   ASSET=EURC OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json ./scripts/distribute-op-rewards.sh
 #
 set -euo pipefail
 
@@ -45,8 +50,22 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/common.sh"
 
 APPROVE="${APPROVE:-1}"
+ASSET="${ASSET:-USDC}"
 
-req SOURCE REWARDS_ID OP_ID EPOCH RECIPIENTS
+# Each asset has its own LendRewards contract; ASSET also names the common.sh
+# variable holding its token (USDC / EURC).
+case "$ASSET" in
+  USDC) REWARDS_VAR=REWARDS_ID_USD ;;
+  EURC) REWARDS_VAR=REWARDS_ID_EUR ;;
+  *)
+    echo "error: unknown ASSET '$ASSET' (expected USDC | EURC)" >&2
+    exit 1
+    ;;
+esac
+
+req SOURCE "$REWARDS_VAR" "$ASSET" OP_ID EPOCH RECIPIENTS
+REWARDS_CONTRACT="${!REWARDS_VAR}"
+ASSET_TOKEN="${!ASSET}"
 
 [ -f "$RECIPIENTS" ] || { echo "error: RECIPIENTS file not found: $RECIPIENTS" >&2; exit 1; }
 need_bin node jq stellar
@@ -54,7 +73,8 @@ need_bin node jq stellar
 OUT="${OUT:-./merkle.json}"
 
 echo "==> Network:   $NETWORK" >&2
-echo "==> Rewards:   $REWARDS_ID" >&2
+echo "==> Asset:     $ASSET ($ASSET_TOKEN)" >&2
+echo "==> Rewards:   $REWARDS_CONTRACT ($REWARDS_VAR)" >&2
 echo "==> Op / epoch: $OP_ID / $EPOCH" >&2
 echo "==> Recipients: $RECIPIENTS" >&2
 
@@ -76,13 +96,21 @@ echo "==> Proofs written:   $OUT" >&2
 
 ADMIN="$(source_address)"
 
+# Read the token off the contract so neither the approval nor the distribution
+# can run against the wrong asset. --send=no keeps this a simulation (no
+# signature, no ledger prompt). An explicit REWARD_TOKEN skips the check.
+if [ -z "${REWARD_TOKEN:-}" ]; then
+  REWARD_TOKEN="$(stellar contract invoke \
+    --id "$REWARDS_CONTRACT" --source "$SOURCE" "${NETWORK_ARGS[@]}" --send=no \
+    -- reward_token | tr -d '"')"
+  [ "$REWARD_TOKEN" = "$ASSET_TOKEN" ] || {
+    echo "error: $REWARDS_VAR ($REWARDS_CONTRACT) pays out $REWARD_TOKEN, not $ASSET ($ASSET_TOKEN)" >&2
+    exit 1
+  }
+fi
+
 # 2. Approve the reward token so distribute can transfer_from the admin.
 if [ "$APPROVE" = "1" ]; then
-  # Read the token off the contract so the approval can never target the wrong
-  # one. --send=no keeps this a simulation (no signature, no ledger prompt).
-  REWARD_TOKEN="${REWARD_TOKEN:-$(stellar contract invoke \
-    --id "$REWARDS_ID" --source "$SOURCE" "${NETWORK_ARGS[@]}" --send=no \
-    -- reward_token | tr -d '"')}"
   # Approval expires ~30 days out (5s ledger cadence => 518400 ledgers).
   if [ -z "${EXPIRATION_LEDGER:-}" ]; then
     need_bin curl
@@ -101,7 +129,7 @@ if [ "$APPROVE" = "1" ]; then
     "${SIGN_ARGS[@]}" \
     -- approve \
     --from "$ADMIN" \
-    --spender "$REWARDS_ID" \
+    --spender "$REWARDS_CONTRACT" \
     --amount "$TOTAL_ALLOCATION" \
     --expiration_ledger "$EXPIRATION_LEDGER"
 fi
@@ -109,7 +137,7 @@ fi
 # 3. Distribute: sets the root and pulls TOTAL_ALLOCATION into the contract.
 echo "==> Distributing op rewards..." >&2
 stellar contract invoke \
-  --id "$REWARDS_ID" \
+  --id "$REWARDS_CONTRACT" \
   --source "$SOURCE" \
   "${NETWORK_ARGS[@]}" \
   "${SIGN_ARGS[@]}" \

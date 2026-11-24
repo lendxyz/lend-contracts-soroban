@@ -17,10 +17,11 @@ build:
 # on the make line and reach the scripts through the environment.
 #   make deploy-factory FIRST_OP_ID=5   # first op id (old factory's operation_count + 1)
 #   make deploy-rewards
-#   make deploy-dummy-usdc
+#   make deploy-dummy-tokens ASSET=USDC   # or ASSET=EURC
 #   make deploy-op-lend-wallet
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3                 # uses sample recipients
 # 	make distribute-op-rewards OP_ID=1 EPOCH=3 RECIPIENTS=./round3.json
+# 	make distribute-op-rewards ASSET=EURC OP_ID=1 EPOCH=3       # EURC rewards contract
 #   make create-operation OP_NAME="Alpha" TOTAL_SHARES=1000000 EUR_PER_SHARE=1000000
 #   make start-operation OP_ID=0
 #   make withdraw-funds OP_ID=1 DESTINATION=G...
@@ -32,7 +33,8 @@ build:
 #   make wallet-register-op-lend OP_ID=1   # token copied from the factory
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000
 #   make wallet-redeem OP_ID=1 DESTINATION=G... AMOUNT=1000000 WHITELIST=1 DRY_RUN=1
-#   make fund-dummy-usdc TO=G... AMOUNT_WHOLE=5000
+#   make fund-dummy-tokens ASSET=USDC TO=G... AMOUNT_WHOLE=5000
+#   make fund-dummy-tokens ASSET=EURC TO=G...
 #   make update-backend-signer BACKEND_SIGNER=GAOQ67SJ...   # factory only; tokens + wallet follow
 #   make upgrade-contract CONTRACT=factory   # in place, same id + state
 #   make upgrade-contract CONTRACT=wallet
@@ -62,8 +64,8 @@ distribute-op-rewards: OUT ?= scripts/merkle.json
 distribute-op-rewards:
 	RECIPIENTS="$(RECIPIENTS)" OUT="$(OUT)" ./scripts/distribute-op-rewards.sh
 
-deploy-dummy-usdc:
-	./scripts/deploy-dummy-usdc.sh
+deploy-dummy-tokens:
+	./scripts/deploy-dummy-tokens.sh
 
 create-operation:
 	./scripts/create-operation.sh
@@ -106,8 +108,8 @@ wallet-redeem:
 wallet-set-factory:
 	./scripts/wallet-set-factory.sh
 
-fund-dummy-usdc:
-	./scripts/fund-dummy-usdc.sh
+fund-dummy-tokens:
+	./scripts/fund-dummy-tokens.sh
 
 update-backend-signer:
 	./scripts/update-backend-signer.sh
@@ -119,7 +121,7 @@ clean:
 	cargo clean
 
 .PHONY: default all test build fmt clean \
-	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-usdc create-operation start-operation invest \
-	invest-with-proof fiat-invest fund-dummy-usdc update-backend-signer upgrade-contract \
+	deploy-factory deploy-rewards distribute-op-rewards deploy-dummy-tokens create-operation start-operation invest \
+	invest-with-proof fiat-invest fund-dummy-tokens update-backend-signer upgrade-contract \
 	deploy-op-lend-wallet wallet-register-op-lend wallet-redeem wallet-set-factory \
 	withdraw-funds
