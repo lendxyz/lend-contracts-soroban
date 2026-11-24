@@ -19,13 +19,22 @@ NOTE: This is only the uploaded WASM hash used by the factory to make actual dep
 | Testnet | 304d156847955422d8bc09519038d30c76512cbe7c8c20a51b41c2ef833d2b8a |
 
 
-## Rewards
+## Rewards USD
 
 
 | Network          | Address                                    |
 | ---------------- | ------------------------------------------ |
 | Mainnet         | CCSA4PQNTOZXJTFHHLBLBVU2YLNJMIFBKQAGE4IDGNJBHRRXDXO7QKN6 |
 | Testnet | CCDA226CTGRXT3AS2AXENI757ICIMOX3XTOSMPVICCXBLK56UY734ITE |
+
+
+## Rewards EUR
+
+
+| Network          | Address                                    |
+| ---------------- | ------------------------------------------ |
+| Mainnet         | TBD |
+| Testnet | CCGU65QF46HQM4E3IUVNKWKAD54C4XRWMRTUV3TTBTIRJABB2UEIVVRA |
 
 
 ## OpLendWallet
