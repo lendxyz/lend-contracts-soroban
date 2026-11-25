@@ -40,6 +40,8 @@ pub struct OperationFinished {
     pub amount_raised_euro: i128,
 }
 
+/// `asset` is the token paid with: USDC for `invest`, EURC for `invest_eur`,
+/// and the zero contract id for `fiat_invest`, settled off-chain.
 /// `usdc_amount` is in USDC base units: the USDC paid for `invest`, and for
 /// `invest_eur` / `fiat_invest` the USD value of the purchase at the current
 /// EUR/USD rate.
@@ -49,6 +51,8 @@ pub struct Invested {
     pub investor: Address,
     #[topic]
     pub operation_id: u32,
+    #[topic]
+    pub asset: Address,
     pub usdc_amount: i128,
     pub shares_bought: i128,
 }

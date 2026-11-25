@@ -1,4 +1,6 @@
-use soroban_sdk::{contractclient, contracttype, Address, BytesN, Env, String};
+use soroban_sdk::{
+    contractclient, contracttype, Address, Bytes, BytesN, Env, String,
+};
 
 use crate::oracle::PRICE_PRECISION;
 
@@ -48,6 +50,20 @@ pub enum Coin {
 
 impl Coin {
     pub const ALL: [Coin; 2] = [Coin::Usdc, Coin::Eurc];
+}
+
+/// Strkeys of the all-zero account key and contract id: valid addresses nobody
+/// controls, Stellar's nearest thing to EVM's `address(0)`. Tokens sent to the
+/// zero contract id land in the token's ledger and can never move again.
+pub const ZERO_ACCOUNT: &[u8; 56] =
+    b"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
+pub const ZERO_CONTRACT: &[u8; 56] =
+    b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
+
+/// [`ZERO_CONTRACT`] as an `Address`: the `asset` a fiat purchase reports in
+/// `Invested`, since no token moves on-chain.
+pub fn zero_contract(e: &Env) -> Address {
+    Address::from_string_bytes(&Bytes::from_array(e, ZERO_CONTRACT))
 }
 
 // `OpData::flags` bits.

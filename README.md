@@ -305,9 +305,12 @@ EURC follows the same rules: the constructor takes it and caches its
 `decimals()` (`DataKey::Token(Eurc)`, write-once). EURC amounts (`eurc_raised`,
 `eurc_raised_per_client`, `eurc_withdrawn_amount`) are in EURC base units.
 `Invested.usdc_amount` for an `invest_eur` is the USD value of the EURC paid
-at the current oracle rate. `Refunded` and `FundingWithdrawn` do no
-conversion: `usdc_amount` is the USDC sent and `eurc_amount` the EURC sent, in
-EURC base units, so refunds and withdrawals never depend on the oracle.
+at the current oracle rate; its `asset` topic says which token was paid (the
+USDC or EURC address, or the zero contract id
+`CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4` for `fiat_invest`).
+`Refunded` and `FundingWithdrawn` do no conversion: `usdc_amount` is the USDC
+sent and `eurc_amount` the EURC sent, in EURC base units, so refunds and
+withdrawals never depend on the oracle.
 
 The Reflector feed reports **14** decimals (verified on both networks) and
 `scale_to_6` normalizes it; the residual truncation is ~5e-7 USD per EUR.

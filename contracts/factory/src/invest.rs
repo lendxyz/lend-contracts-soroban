@@ -1,5 +1,5 @@
 use common::{build_void_nonce_message, verify_backend_sig};
-use soroban_sdk::{panic_with_error, Address, BytesN, Env, String};
+use soroban_sdk::{panic_with_error, token, Address, BytesN, Env, String};
 
 use crate::crypto::{
     build_fiat_invest_message, build_invest_message, consume_nonce,
@@ -9,7 +9,7 @@ use crate::events;
 use crate::oracle::{amount_in, amount_out, require_pegged, usd_value};
 use crate::storage as st;
 use crate::types::{
-    Coin, OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED,
+    zero_contract, Coin, OpData, OpLendClient, F_CANCELED, F_PAUSED, F_STARTED,
 };
 
 /// An operation that accepts investments: started and not finished. Every
@@ -87,7 +87,8 @@ pub fn invest(
     *pos.invested_mut(coin) += cost;
     st::write_position(e, id, &user, &pos);
 
-    st::token_client(e, coin).transfer(
+    let asset = st::read_token(e, coin);
+    token::Client::new(e, &asset).transfer(
         &user,
         e.current_contract_address(),
         &cost,
@@ -96,6 +97,7 @@ pub fn invest(
     events::Invested {
         investor: user.clone(),
         operation_id: id,
+        asset,
         usdc_amount: usd_value(e, coin, cost),
         shares_bought: shares_amount,
     }
@@ -146,6 +148,7 @@ pub fn fiat_invest(
     events::Invested {
         investor: user.clone(),
         operation_id: id,
+        asset: zero_contract(e),
         usdc_amount: cost,
         shares_bought: shares_amount,
     }

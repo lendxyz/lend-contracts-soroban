@@ -516,6 +516,16 @@ fn test_invest_happy_path() {
     let nonce = String::from_str(&s.e, "n1");
     let sig = sign_invest(&s.e, &s.factory_id, id, &user, 100, &nonce);
     s.factory.invest(&user, &id, &100, &nonce, &sig);
+    let expected = crate::events::Invested {
+        investor: user.clone(),
+        operation_id: id,
+        asset: s.usdc_addr.clone(),
+        usdc_amount: 1100,
+        shares_bought: 100,
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
 
     assert_eq!(s.factory.funding_progress(&id), 100);
     assert_eq!(s.factory.usdc_raised(&id), 1100);
@@ -1203,6 +1213,20 @@ fn test_fiat_invest() {
 
     s.factory
         .fiat_invest(&id, &40, &user, &holder, &nonce, &sig);
+    // No token moves, so the asset is the zero contract id.
+    let expected = crate::events::Invested {
+        investor: user.clone(),
+        operation_id: id,
+        asset: Address::from_str(
+            &s.e,
+            "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4",
+        ),
+        usdc_amount: 440,
+        shares_bought: 40,
+    }
+    .to_xdr(&s.e, &s.factory_id);
+    let events = s.e.events().all().filter_by_contract(&s.factory_id);
+    assert!(events.events().contains(&expected));
 
     let op_token = oplend::Client::new(&s.e, &op_addr);
     assert_eq!(op_token.balance(&holder), 40);
@@ -1795,6 +1819,7 @@ fn test_invest_eur_happy_path() {
     let expected = crate::events::Invested {
         investor: user.clone(),
         operation_id: id,
+        asset: s.eurc_addr.clone(),
         usdc_amount: 1100,
         shares_bought: 100,
     }

@@ -176,7 +176,7 @@ Every code changed: removed errors no longer leave gaps.
 | `NonceVoided` | **New**: topics `["nonce_voided", nonce]`, no data |
 | `Predeposit`, `Gifted`, `ClaimedOpToken`, `PredepositsOpen`, `PredepositsClosed` | **Removed** |
 | `OperationFinished` | Same shape, **new unit**: `amount_raised_euro` is 6-decimal EUR (was 12-decimal; 2 EUR is now `2_000_000`) |
-| `Invested` | Same shape. `usdc_amount` is the USDC paid for `invest`, and for `invest_eur` / `fiat_invest` the USD value of the purchase at the current EUR/USD rate, in USDC base units |
+| `Invested` | **Changed**: topics gain `asset`, the token paid with (USDC for `invest`, EURC for `invest_eur`, the zero contract id `CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4` for `fiat_invest`). Topics `["invested", investor, operation_id, asset]`, data `{ usdc_amount, shares_bought }`. `usdc_amount` is the USDC paid for `invest`, and for `invest_eur` / `fiat_invest` the USD value of the purchase at the current EUR/USD rate, in USDC base units |
 
 Unchanged: `OperationCreated`, `OperationStarted`, `OperationCanceled`,
 `OperationPaused`, `OperationResumed`, `InvestedFiat`.
@@ -476,7 +476,7 @@ struct Operation { op_token: Address, total_shares: i128, eur_per_share: i128, o
 struct RefundEntry { user: Address, shares_to_burn: i128, usdc_to_refund: i128, eurc_to_refund: i128 }  // NEW
 
 event FundingWithdrawn   topics ["funding_withdrawn", operation_id: u32]                                     data { usdc_amount: i128, eurc_amount: i128 }  // CHANGED
-event Invested           topics ["invested", investor: Address, operation_id: u32]                           data { usdc_amount: i128, shares_bought: i128 }
+event Invested           topics ["invested", investor: Address, operation_id: u32, asset: Address]           data { usdc_amount: i128, shares_bought: i128 }  // CHANGED
 event InvestedFiat       topics ["invested_fiat", investor: Address, oplend_destination: Address, operation_id: u32]  data { shares_bought: i128 }
 event NonceVoided        topics ["nonce_voided", nonce: String]                                               data {}  // NEW
 event OperationCanceled  topics ["operation_canceled", operation_id: u32]                                    data {}

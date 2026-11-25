@@ -5,7 +5,8 @@ use crate::events;
 use crate::oracle::{set_oracle, set_stablecoin_oracle};
 use crate::storage as st;
 use crate::types::{
-    Coin, DataKey, OpData, OpLendClient, RefundEntry, F_STARTED,
+    Coin, DataKey, OpData, OpLendClient, RefundEntry, F_STARTED, ZERO_ACCOUNT,
+    ZERO_CONTRACT,
 };
 
 /// One operation, read once and written once per refund call however many
@@ -270,14 +271,6 @@ pub fn oplend_admin_burn(e: &Env, op_id: u32, user: Address, value: i128) {
     let op = st::read_op(e, op_id);
     OpLendClient::new(e, &op.op_token).burn(&user, &value);
 }
-
-/// Strkeys of the all-zero account key and contract id: valid addresses nobody
-/// controls, Stellar's nearest thing to EVM's `address(0)`. Tokens sent to the
-/// zero contract id land in the token's ledger and can never move again.
-const ZERO_ACCOUNT: &[u8; 56] =
-    b"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF";
-const ZERO_CONTRACT: &[u8; 56] =
-    b"CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABSC4";
 
 /// Rejects payout destinations that would strand the funds: the factory itself
 /// (the coins would stay in the shared balance but count as withdrawn, so no
