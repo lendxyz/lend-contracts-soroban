@@ -1484,7 +1484,7 @@ fn test_non_round_rate_is_charged_as_quoted() {
 /// Every way the EUR/USD feed can fail stops all three purchase paths and the
 /// USDC quotes; a stablecoin feed failure stops `invest` and `invest_eur` (the
 /// paths with a depeg check). The EURC quote reads no feed. A price exactly
-/// 24 h old is still accepted.
+/// 600 s old is still accepted.
 #[test]
 fn test_oracle_failures_block_purchases_and_quotes() {
     type Break = fn(&MockFeedClient, &Symbol);
@@ -1492,7 +1492,7 @@ fn test_oracle_failures_block_purchases_and_quotes() {
         (|f, _| f.remove_price(), Error::OracleNoPrice),
         (|f, s| f.set_price_of(s, &0), Error::OracleInvalidPrice),
         (|f, s| f.set_price_of(s, &-1), Error::OracleInvalidPrice),
-        (|f, _| f.set_age(&86_401), Error::OracleStalePrice),
+        (|f, _| f.set_age(&601), Error::OracleStalePrice),
     ];
 
     for (break_feed, expected) in failures {
@@ -1554,8 +1554,8 @@ fn test_oracle_failures_block_purchases_and_quotes() {
 
     let s = setup();
     let (id, _) = create_op(&s, 1000);
-    s.oracle.set_age(&86_400);
-    s.stablecoin_oracle.set_age(&86_400);
+    s.oracle.set_age(&600);
+    s.stablecoin_oracle.set_age(&600);
     assert_eq!(s.factory.get_amount_in(&id, &10), 110);
 }
 

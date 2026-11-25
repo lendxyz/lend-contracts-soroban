@@ -224,7 +224,7 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
   `CAFJZQWSED6YAWZU3GWRTOCNPPCGBN32L7QV43XX5LZLFTK6JLN34DLN`, testnet
   `CCYOZJCOPG34LLQQ7N24YXBM7LL62R7ONMZ3G6WZAAYPB5OYKOMJRN63`).
 - The price goes through the same checks as the EUR rate (missing, non-positive
-  or older than 24 h fails) via a shared `read_price`.
+  or older than 600 s fails) via a shared `read_price`.
 - New constructor argument `usdc_oracle` (after `oracle`) and admin setter
   `update_usdc_oracle_address`. `scripts/deploy-factory.sh` passes
   `USDC_ORACLE`, defaulted per network in `scripts/common.sh`.
@@ -285,9 +285,9 @@ The deprecated pre-deposit, gift and claim feature is removed from the factory:
     quotes, charges and the round trip match values computed independently.
     (A purchase rounding to zero: `test_order_rounding_to_zero_fails`, C13.)
   - `test_oracle_failures_block_purchases_and_quotes`: no price, zero,
-    negative, older than 24 h on the EUR feed (`invest`, `fiat_invest`,
+    negative, older than 600 s on the EUR feed (`invest`, `fiat_invest`,
     `get_amount_in`, `get_amount_out`) and on the USDC feed (`invest`);
-    exactly 24 h is accepted.
+    exactly 600 s is accepted.
   - `test_invest_rejects_tampered_signatures` /
     `test_fiat_invest_rejects_tampered_signatures`: another key, or the right
     signature with a different amount, user, operation or holder; the nonce

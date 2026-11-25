@@ -8,7 +8,7 @@ use crate::storage as st;
 use crate::types::{Coin, DataKey};
 
 pub const PRICE_PRECISION: i128 = 1_000_000; // 1e6
-const MAX_PRICE_AGE: u64 = 86_400; // 24h in seconds
+const MAX_PRICE_AGE: u64 = 600; // 10 min in seconds
 
 /// Band (6 decimals, inclusive) within which a coin's value in its reference
 /// currency (USD for USDC, EUR for EURC) must stay for purchases in it to be

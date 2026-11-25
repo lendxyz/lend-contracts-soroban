@@ -187,7 +187,7 @@ Unchanged: `OperationCreated`, `OperationStarted`, `OperationCanceled`,
 - `invest` fails with `UsdcOffPeg` while USDC/USD is outside [0.98, 1.02]
   (bounds accepted). `invest_eur` fails with `EurcOffPeg` while EURC/EUR is
   outside the same band. Both can also fail with the oracle errors when the
-  stablecoin feed has no price, a non-positive one, or one older than 24 h.
+  stablecoin feed has no price, a non-positive one, or one older than 600 s.
 - `fiat_invest` now requires a started operation (`OperationNotStarted`), like
   `invest`.
 - An order too small to cost one base unit fails with `AmountTooSmall`; before

@@ -255,7 +255,7 @@ pub trait OracleInterface {
 ```
 
 `get_eur_usd_price` reads the `EUR` price, rejects non-positive or stale prices
-(> 24h old), and scales it to 6 decimals. Pricing math:
+(> 600 s old), and scales it to 6 decimals. Pricing math:
 
 - `amount_in(coin, eur_per_share, shares)` → cost in USDC or EURC base units
   (`PRICE_PRECISION = 1e6`). USDC goes through the EUR/USD rate; EURC is taken
